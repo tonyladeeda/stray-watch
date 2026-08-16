@@ -1,40 +1,46 @@
 import React, { useState, useEffect } from 'react';
-import { MapPin, Camera, AlertCircle, CheckCircle2, Compass, HeartHandshake, X } from 'lucide-react';
+import { Routes, Route, Link, useLocation } from 'react-router-dom';
+import AuthModal from './components/AuthModal';
+import { Camera, Compass, HeartHandshake, X, CheckCircle2, MapPin, LayoutDashboard, User } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import Auth from './Auth';
+import Feed from './pages/Feed';
+import Directory from './pages/Directory';
+import AnimalProfile from './pages/AnimalProfile';
+import ProfileSettings from './pages/ProfileSettings';
+import Dashboard from './pages/Dashboard';
 
-export default function StrayRescueMVP() {
-  const [activeTab, setActiveTab] = useState('feed');
+export default function App() {
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isReporting, setIsReporting] = useState(false);
-  const [sightings, setSightings] = useState([]);
   const [newReport, setNewReport] = useState({ location: '', notes: '' });
   const [photoFile, setPhotoFile] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [session, setSession] = useState(null);
   const [showAuth, setShowAuth] = useState(false);
+  const [userProfile, setUserProfile] = useState(null);
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+
+  const location = useLocation();
 
   useEffect(() => {
-    fetchSightings();
-
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
+      if (session) fetchUserProfile(session.user.id);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
+      if (session) fetchUserProfile(session.user.id);
+      else setUserProfile(null);
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  const fetchSightings = async () => {
-    const { data, error } = await supabase
-      .from('sightings')
-      .select('*')
-      .order('created_at', { ascending: false });
-    
-    if (error) console.error('Error fetching sightings:', error);
-    else setSightings(data);
+  const fetchUserProfile = async (userId) => {
+    const { data } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
+    if (data) setUserProfile(data);
   };
 
   const handleReportSubmit = async (e) => {
@@ -55,7 +61,7 @@ export default function StrayRescueMVP() {
       .upload(fileName, photoFile);
 
     if (uploadError) {
-      alert('Upload blocked by Supabase: ' + uploadError.message);
+      alert('Upload blocked: ' + uploadError.message);
       setIsSubmitting(false);
       return;
     }
@@ -63,6 +69,19 @@ export default function StrayRescueMVP() {
     const { data: publicUrlData } = supabase.storage
       .from('sighting-images')
       .getPublicUrl(fileName);
+
+    const { data: animalData, error: animalError } = await supabase
+      .from('animals')
+      .insert([{ status: 'Spotted' }])
+      .select()
+      .single();
+
+    if (animalError) {
+      console.error('Error creating animal:', animalError);
+      alert('Failed to create animal profile.');
+      setIsSubmitting(false);
+      return;
+    }
 
     const { error: dbError } = await supabase
       .from('sightings')
@@ -72,7 +91,8 @@ export default function StrayRescueMVP() {
           notes: newReport.notes,
           status: 'Spotted',
           image_url: publicUrlData.publicUrl,
-          user_id: session ? session.user.id : null
+          user_id: session ? session.user.id : null,
+          animal_id: animalData.id
         }
       ]);
 
@@ -83,16 +103,23 @@ export default function StrayRescueMVP() {
       setIsReporting(false);
       setNewReport({ location: '', notes: '' });
       setPhotoFile(null);
-      fetchSightings();
+      
+      if (!session) {
+        const wantsToTrack = window.confirm(
+          "Report submitted successfully!\n\nWould you like to create a free account to track this animal and get updates on its status?"
+        );
+        
+        if (wantsToTrack) {
+          setIsAuthModalOpen(true);
+        } else {
+          window.location.reload(); 
+        }
+      } else {
+        window.location.reload(); 
+      }
     }
     
     setIsSubmitting(false);
-  };
-
-  const formatTime = (dateString) => {
-    if (!dateString) return 'Just now';
-    const date = new Date(dateString);
-    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
   if (showAuth && !session) {
@@ -109,81 +136,65 @@ export default function StrayRescueMVP() {
     );
   }
 
+  const displayAvatar = userProfile?.avatar_url || session?.user?.user_metadata?.avatar_url;
+
   return (
     <div className="max-w-md mx-auto bg-slate-50 min-h-screen relative font-sans text-slate-900">
-      <header className="bg-white p-4 shadow-sm sticky top-0 z-10 flex justify-between items-center">
-        <h1 className="text-xl font-extrabold tracking-tight text-slate-800">LA StrayWatch</h1>
+      <header className="bg-white p-4 shadow-sm sticky top-0 z-10 flex items-center justify-between">
+        <h1 className="text-xl font-extrabold tracking-tight text-slate-800">Stray Watch</h1>
         {session ? (
-          <button onClick={() => supabase.auth.signOut()} className="text-sm text-slate-500 font-semibold hover:text-slate-700 transition-colors">Sign Out</button>
+          <div className="relative">
+            <button 
+              onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
+              className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-blue-600"
+            >
+              {displayAvatar ? (
+                <img src={displayAvatar} alt="Profile" className="w-full h-full object-cover" />
+              ) : (
+                <User size={20} className="text-slate-400" />
+              )}
+            </button>
+
+            {isProfileMenuOpen && (
+              <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-slate-100 overflow-hidden z-50">
+                <Link 
+                  to="/profile" 
+                  onClick={() => setIsProfileMenuOpen(false)}
+                  className="block px-4 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors border-b border-slate-100"
+                >
+                  Profile Settings
+                </Link>
+                <button 
+                  onClick={async () => { 
+                    setIsProfileMenuOpen(false);
+                    await supabase.auth.signOut(); 
+                    window.location.reload(); 
+                  }}
+                  className="w-full text-left px-4 py-3 text-sm font-bold text-rose-600 hover:bg-rose-50 transition-colors"
+                >
+                  Sign Out
+                </button>
+              </div>
+            )}
+          </div>
         ) : (
-          <button onClick={() => setShowAuth(true)} className="text-sm text-blue-600 font-semibold hover:text-blue-700 transition-colors">Sign In</button>
+          <button 
+            onClick={() => setIsAuthModalOpen(true)}
+            className="text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 transition-colors px-4 py-1.5 rounded-lg shadow-sm"
+          >
+            Log In
+          </button>
         )}
       </header>
 
-      <main className="pb-24">
-        {activeTab === 'feed' && (
-          <div className="p-4 space-y-5">
-            <div className="flex justify-between items-center mb-1">
-              <h2 className="font-bold text-slate-700 tracking-tight">Recent Sightings</h2>
-              <span className="text-xs bg-slate-200 text-slate-600 px-2.5 py-1 rounded-full font-medium">Radius: 5mi</span>
-            </div>
-            
-            {sightings.length === 0 && (
-              <p className="text-center text-slate-500 mt-10">No sightings reported yet.</p>
-            )}
-
-            {sightings.map((sighting) => (
-              <div key={sighting.id} className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-                <img src={sighting.image_url} alt="Stray" className="w-full h-48 object-cover" />
-                <div className="p-4">
-                  <div className="flex justify-between items-start mb-3">
-                    <div>
-                      <h3 className="font-bold text-slate-900 flex items-center gap-1">
-                        <MapPin size={16} className="text-slate-400" />
-                        {sighting.location}
-                      </h3>
-                      <p className="text-xs text-slate-500 mt-0.5 ml-5">{formatTime(sighting.created_at)}</p>
-                    </div>
-                    <span className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-bold ${
-                      sighting.status === 'Spotted' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'
-                    }`}>
-                      {sighting.status === 'Spotted' ? <AlertCircle size={12} /> : <CheckCircle2 size={12} />}
-                      {sighting.status}
-                    </span>
-                  </div>
-                  <p className="text-sm text-slate-600 leading-relaxed">{sighting.notes}</p>
-                  <button className="mt-4 text-sm font-semibold text-blue-600 w-full text-left hover:text-blue-700 transition-colors">
-                    + Add Update / Match
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {activeTab === 'directory' && (
-          <div className="p-4 space-y-4">
-            <h2 className="font-bold text-slate-700 tracking-tight">Verified Rescues & Support</h2>
-            
-            <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-100">
-              <h3 className="font-bold text-slate-900">Downtown Dog Rescue</h3>
-              <p className="text-sm text-slate-600 mb-4 mt-1">Focus: DTLA, low-income support, kennel intervention.</p>
-              <div className="flex space-x-3">
-                <button className="flex-1 bg-blue-600 hover:bg-blue-700 transition-colors text-white py-2 rounded-lg text-sm font-bold shadow-sm">Donate</button>
-                <button className="flex-1 border border-slate-300 hover:bg-slate-50 transition-colors py-2 rounded-lg text-sm font-bold text-slate-700">Contact</button>
-              </div>
-            </div>
-
-            <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-100">
-              <h3 className="font-bold text-slate-900">LA Animal Rescue</h3>
-              <p className="text-sm text-slate-600 mb-4 mt-1">Focus: Street rescues, severe medical cases.</p>
-              <div className="flex space-x-3">
-                <button className="flex-1 bg-blue-600 hover:bg-blue-700 transition-colors text-white py-2 rounded-lg text-sm font-bold shadow-sm">Donate</button>
-                <button className="flex-1 border border-slate-300 hover:bg-slate-50 transition-colors py-2 rounded-lg text-sm font-bold text-slate-700">Contact</button>
-              </div>
-            </div>
-          </div>
-        )}
+      <main className="pb-24" onClick={() => isProfileMenuOpen && setIsProfileMenuOpen(false)}>
+        <Routes>
+          <Route path="/" element={<Feed />} />
+          <Route path="/directory" element={<Directory />} />
+          <Route path="/animal/:id" element={<AnimalProfile />} />
+          <Route path="/profile" element={<ProfileSettings />} />
+          <Route path="/dashboard" element={<Dashboard />} />
+        </Routes>
       </main>
 
       {!isReporting && (
@@ -197,20 +208,29 @@ export default function StrayRescueMVP() {
       )}
 
       <nav className="fixed bottom-0 w-full max-w-md bg-white border-t border-slate-200 flex justify-around p-3 z-10 pb-6">
-        <button 
-          onClick={() => setActiveTab('feed')}
-          className={`flex flex-col items-center gap-1 font-bold text-xs transition-colors ${activeTab === 'feed' ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
+        <Link 
+          to="/"
+          className={`flex flex-col items-center gap-1 font-bold text-xs transition-colors ${location.pathname === '/' ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
         >
           <Compass size={24} />
           Sightings
-        </button>
-        <button 
-          onClick={() => setActiveTab('directory')}
-          className={`flex flex-col items-center gap-1 font-bold text-xs transition-colors ${activeTab === 'directory' ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
+        </Link>
+        <Link 
+          to="/directory"
+          className={`flex flex-col items-center gap-1 font-bold text-xs transition-colors ${location.pathname === '/directory' ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
         >
           <HeartHandshake size={24} />
           Rescues
-        </button>
+        </Link>
+        {session && (
+          <Link 
+            to="/dashboard"
+            className={`flex flex-col items-center gap-1 font-bold text-xs transition-colors ${location.pathname === '/dashboard' ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
+          >
+            <LayoutDashboard size={24} />
+            Dashboard
+          </Link>
+        )}
       </nav>
 
       {isReporting && (
@@ -226,15 +246,17 @@ export default function StrayRescueMVP() {
             <form onSubmit={handleReportSubmit} className="space-y-5">
               
               <label className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors cursor-pointer group block ${photoFile ? 'border-green-500 bg-green-50' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'}`}>
+                {/* Note the added capture="environment" attribute below */}
                 <input 
                   type="file" 
-                  accept="image/*" 
+                  accept="image/*"
+                  capture="environment" 
                   className="hidden" 
                   onChange={(e) => setPhotoFile(e.target.files[0])}
                 />
                 <div className={`flex flex-col items-center gap-2 font-bold ${photoFile ? 'text-green-600' : 'text-blue-600'}`}>
                   {photoFile ? <CheckCircle2 size={32} /> : <Camera size={32} className="text-slate-400 group-hover:text-blue-600 transition-colors" />}
-                  {photoFile ? 'Photo Attached!' : 'Add Photo'}
+                  {photoFile ? 'Photo Attached!' : 'Take Photo'}
                 </div>
                 <p className="text-xs text-slate-500 mt-2">
                   {photoFile ? photoFile.name : 'Take a live photo or choose from library'}
@@ -276,6 +298,7 @@ export default function StrayRescueMVP() {
           </div>
         </div>
       )}
+      <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
     </div>
   );
 }
