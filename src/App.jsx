@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { MapPin, Camera, AlertCircle, CheckCircle2, Compass, HeartHandshake, X } from 'lucide-react';
 import { supabase } from './supabaseClient';
+import Auth from './Auth';
 
 export default function StrayRescueMVP() {
   const [activeTab, setActiveTab] = useState('feed');
@@ -9,9 +10,21 @@ export default function StrayRescueMVP() {
   const [newReport, setNewReport] = useState({ location: '', notes: '' });
   const [photoFile, setPhotoFile] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [session, setSession] = useState(null);
+  const [showAuth, setShowAuth] = useState(false);
 
   useEffect(() => {
     fetchSightings();
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const fetchSightings = async () => {
@@ -34,7 +47,6 @@ export default function StrayRescueMVP() {
 
     setIsSubmitting(true);
 
-    // 1. Upload the image to Supabase Storage
     const fileExt = photoFile.name.split('.').pop();
     const fileName = `${Date.now()}.${fileExt}`;
     
@@ -43,17 +55,15 @@ export default function StrayRescueMVP() {
       .upload(fileName, photoFile);
 
     if (uploadError) {
-  alert('Upload blocked by Supabase: ' + uploadError.message);
-  setIsSubmitting(false);
-  return;
-}
+      alert('Upload blocked by Supabase: ' + uploadError.message);
+      setIsSubmitting(false);
+      return;
+    }
 
-    // 2. Get the public URL for the newly uploaded image
     const { data: publicUrlData } = supabase.storage
       .from('sighting-images')
       .getPublicUrl(fileName);
 
-    // 3. Save the sighting report with the real image URL to the database
     const { error: dbError } = await supabase
       .from('sightings')
       .insert([
@@ -61,7 +71,8 @@ export default function StrayRescueMVP() {
           location: newReport.location || 'Current Location (GPS)',
           notes: newReport.notes,
           status: 'Spotted',
-          image_url: publicUrlData.publicUrl
+          image_url: publicUrlData.publicUrl,
+          user_id: session ? session.user.id : null
         }
       ]);
 
@@ -84,11 +95,29 @@ export default function StrayRescueMVP() {
     return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
+  if (showAuth && !session) {
+    return (
+      <div className="relative max-w-md mx-auto min-h-screen bg-slate-50">
+        <button 
+          onClick={() => setShowAuth(false)} 
+          className="absolute top-6 right-6 z-20 text-slate-500 bg-slate-200 rounded-full p-2 hover:bg-slate-300 transition-colors"
+        >
+          <X size={20} />
+        </button>
+        <Auth />
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-md mx-auto bg-slate-50 min-h-screen relative font-sans text-slate-900">
       <header className="bg-white p-4 shadow-sm sticky top-0 z-10 flex justify-between items-center">
         <h1 className="text-xl font-extrabold tracking-tight text-slate-800">LA StrayWatch</h1>
-        <button className="text-sm text-blue-600 font-semibold hover:text-blue-700 transition-colors">Sign In</button>
+        {session ? (
+          <button onClick={() => supabase.auth.signOut()} className="text-sm text-slate-500 font-semibold hover:text-slate-700 transition-colors">Sign Out</button>
+        ) : (
+          <button onClick={() => setShowAuth(true)} className="text-sm text-blue-600 font-semibold hover:text-blue-700 transition-colors">Sign In</button>
+        )}
       </header>
 
       <main className="pb-24">
@@ -197,20 +226,20 @@ export default function StrayRescueMVP() {
             <form onSubmit={handleReportSubmit} className="space-y-5">
               
               <label className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors cursor-pointer group block ${photoFile ? 'border-green-500 bg-green-50' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'}`}>
-  <input 
-    type="file" 
-    accept="image/*" 
-    className="hidden" 
-    onChange={(e) => setPhotoFile(e.target.files[0])}
-  />
-  <div className={`flex flex-col items-center gap-2 font-bold ${photoFile ? 'text-green-600' : 'text-blue-600'}`}>
-    {photoFile ? <CheckCircle2 size={32} /> : <Camera size={32} className="text-slate-400 group-hover:text-blue-600 transition-colors" />}
-    {photoFile ? 'Photo Attached!' : 'Add Photo'}
-  </div>
-  <p className="text-xs text-slate-500 mt-2">
-    {photoFile ? photoFile.name : 'Take a live photo or choose from library'}
-  </p>
-</label>
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  className="hidden" 
+                  onChange={(e) => setPhotoFile(e.target.files[0])}
+                />
+                <div className={`flex flex-col items-center gap-2 font-bold ${photoFile ? 'text-green-600' : 'text-blue-600'}`}>
+                  {photoFile ? <CheckCircle2 size={32} /> : <Camera size={32} className="text-slate-400 group-hover:text-blue-600 transition-colors" />}
+                  {photoFile ? 'Photo Attached!' : 'Add Photo'}
+                </div>
+                <p className="text-xs text-slate-500 mt-2">
+                  {photoFile ? photoFile.name : 'Take a live photo or choose from library'}
+                </p>
+              </label>
 
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-1.5">Location</label>
@@ -240,9 +269,8 @@ export default function StrayRescueMVP() {
 
               <div className="pt-2">
                 <button type="submit" disabled={isSubmitting} className="w-full bg-rose-600 hover:bg-rose-700 disabled:bg-rose-400 transition-colors text-white font-bold py-3.5 rounded-xl shadow-md">
-                  {isSubmitting ? 'Uploading...' : 'Post Sighting Anonymously'}
+                  {isSubmitting ? 'Uploading...' : 'Post Sighting'}
                 </button>
-                <p className="text-xs text-center text-slate-500 mt-4 font-medium">You can create an account later to track this post.</p>
               </div>
             </form>
           </div>
