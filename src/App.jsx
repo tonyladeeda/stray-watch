@@ -140,7 +140,7 @@ export default function App() {
 
   return (
     <div className="max-w-md mx-auto bg-slate-50 min-h-screen relative font-sans text-slate-900">
-      <header className="bg-white p-4 shadow-sm sticky top-0 z-10 flex items-center justify-between">
+      <header className="bg-white px-4 h-[72px] shadow-sm sticky top-0 z-20 flex items-center justify-between">
         <h1 className="text-xl font-extrabold tracking-tight text-slate-800">Stray Watch</h1>
         {session ? (
           <div className="relative">
