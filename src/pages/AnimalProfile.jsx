@@ -1,7 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
-import { ArrowLeft, Edit2, Check, X, MapPin, AlertTriangle, ShieldAlert } from 'lucide-react';
+import { 
+  ArrowLeft, Edit2, Check, X, MapPin, AlertTriangle, 
+  ShieldAlert, Phone, Navigation, Globe, Clock, Mail, ArrowRightLeft, Hand 
+} from 'lucide-react';
+import CommentSection from '../components/CommentSection';
+import FollowButton from '../components/FollowButton';
+import { SHELTER_DIRECTORY } from '../shelterData';
+
+const STATUS_OPTIONS = ['Spotted', 'Rescued', 'In-care', 'Fostered', 'Adopted', 'Deceased'];
 
 export default function AnimalProfile() {
   const { id } = useParams();
@@ -10,10 +18,15 @@ export default function AnimalProfile() {
   const [sightings, setSightings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState(null);
-  
+
   // Edit State
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({});
+
+  // Handler / Transfer State
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [isTransferring, setIsTransferring] = useState(false);
+  const [transferEmail, setTransferEmail] = useState('');
 
   // Abuse Report State
   const [abuseReportsCount, setAbuseReportsCount] = useState(0);
@@ -82,8 +95,7 @@ export default function AnimalProfile() {
       size: editForm.size,
       physical_traits: editForm.physical_traits,
       collar_info: editForm.collar_info,
-      behavior: editForm.behavior,
-      status: editForm.status
+      behavior: editForm.behavior
     }).eq('id', id);
 
     if (!error) {
@@ -95,13 +107,63 @@ export default function AnimalProfile() {
     }
   };
 
-  const claimHandler = async () => {
+  const handleStatusChange = async (e) => {
+    const newStatus = e.target.value;
+    if (!session) return;
+    
+    setIsUpdating(true);
+    const updatePayload = { 
+      status: newStatus,
+      handler_id: session.user.id,
+      handler_email: session.user.email
+    };
+
+    const { error } = await supabase.from('animals').update(updatePayload).eq('id', id);
+
+    if (!error) {
+      setAnimal({ ...animal, ...updatePayload });
+    } else {
+      alert('Failed to update status.');
+    }
+    setIsUpdating(false);
+  };
+
+  const handleClaim = async () => {
     if (!session) {
       alert('Please log in to claim an animal.');
       return;
     }
-    const { error } = await supabase.from('animals').update({ handler_id: session.user.id }).eq('id', id);
-    if (!error) fetchAnimalData();
+    setIsUpdating(true);
+    const updatePayload = {
+      handler_id: session.user.id,
+      handler_email: session.user.email
+    };
+    const { error } = await supabase.from('animals').update(updatePayload).eq('id', id);
+    if (!error) {
+      setAnimal({ ...animal, ...updatePayload });
+    } else {
+      alert('Failed to claim animal.');
+    }
+    setIsUpdating(false);
+  };
+
+  const handleTransfer = async () => {
+    if (!transferEmail.trim()) return;
+    setIsUpdating(true);
+
+    const { error } = await supabase.from('animals').update({ 
+      handler_email: transferEmail,
+      handler_id: null
+    }).eq('id', id);
+
+    if (!error) {
+      setAnimal({ ...animal, handler_email: transferEmail, handler_id: null });
+      setIsTransferring(false);
+      setTransferEmail('');
+    } else {
+      alert('Failed to transfer handler.');
+    }
+    setIsUpdating(false);
   };
 
   const handleAbuseSubmit = async (e) => {
@@ -132,7 +194,6 @@ export default function AnimalProfile() {
       alert('Report submitted successfully. Local authorities will be notified.');
     } else {
       alert('Failed to submit report.');
-      console.error(error);
     }
     setIsSubmittingReport(false);
   };
@@ -141,6 +202,14 @@ export default function AnimalProfile() {
   if (!animal) return <div className="p-4 text-center mt-10 font-bold text-slate-500">Animal not found.</div>;
 
   const displayName = animal.name || 'Unidentified Animal';
+  const isCurrentHandler = session?.user?.id === animal.handler_id;
+  const isUrgent = animal.record_type === 'Shelter Urgent';
+  
+  // Find the original sighting to match the shelter directory
+  const originalSighting = sightings.length > 0 ? sightings[sightings.length - 1] : null;
+  const shelterDetails = isUrgent && originalSighting 
+    ? SHELTER_DIRECTORY.find(s => s.name === originalSighting.location) 
+    : null;
 
   const detailsConfig = [
     { key: 'type', label: 'Species', inputType: 'select', options: ['Dog', 'Cat', 'Other'] },
@@ -177,32 +246,42 @@ export default function AnimalProfile() {
 
       <div className="p-4 space-y-4">
         
-        {/* Card 1: Name and Status */}
+        {/* Card 1: Name, Status, and Follow */}
         <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
-          {isEditing ? (
-            <input 
-              type="text" 
-              value={editForm.name || ''} 
-              onChange={(e) => setEditForm({...editForm, name: e.target.value})} 
-              placeholder="Name (e.g. Buddy, or leave blank)" 
-              className="w-full text-2xl font-black text-slate-800 border-b border-slate-300 outline-none focus:border-blue-600 mb-3 bg-slate-50 p-2 rounded"
-            />
-          ) : (
-            <h1 className="text-2xl font-black text-slate-800 mb-3">{displayName}</h1>
-          )}
+          <div className="flex justify-between items-start mb-3">
+            <div className="flex-grow">
+              {isEditing ? (
+                <input 
+                  type="text" 
+                  value={editForm.name || ''} 
+                  onChange={(e) => setEditForm({...editForm, name: e.target.value})} 
+                  placeholder="Name (e.g. Buddy)" 
+                  className="w-full text-2xl font-black text-slate-800 border-b border-slate-300 outline-none focus:border-blue-600 mb-3 bg-slate-50 p-1 rounded"
+                />
+              ) : (
+                <h1 className="text-2xl font-black text-slate-800 mb-3">{displayName}</h1>
+              )}
+            </div>
+            <FollowButton animalId={animal.id} session={session} />
+          </div>
 
           <div className="flex items-center">
-            {isEditing ? (
-              <select 
-                value={editForm.status || 'Spotted'} 
-                onChange={(e) => setEditForm({...editForm, status: e.target.value})}
-                className="bg-amber-100 text-amber-800 font-bold px-3 py-1 rounded-full outline-none text-sm cursor-pointer"
-              >
-                <option value="Spotted">Spotted</option>
-                <option value="In-care">In-care</option>
-                <option value="Rescued">Rescued</option>
-                <option value="Adopted">Adopted</option>
-              </select>
+            {session ? (
+              <div className="relative inline-block">
+                <select
+                  value={animal.status}
+                  onChange={handleStatusChange}
+                  disabled={isUpdating}
+                  className="appearance-none bg-amber-100 text-amber-800 font-bold pl-3 pr-8 py-1 rounded-full outline-none text-sm cursor-pointer disabled:opacity-50"
+                >
+                  {STATUS_OPTIONS.map(status => (
+                    <option key={status} value={status}>{status}</option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-amber-700">
+                  <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+                </div>
+              </div>
             ) : (
               <span className="bg-amber-100 text-amber-800 font-bold px-3 py-1 rounded-full text-sm">
                 {animal.status || 'Spotted'}
@@ -211,17 +290,100 @@ export default function AnimalProfile() {
           </div>
         </div>
 
-        {/* Card 2: Current Handler */}
-        {!animal.handler_id && (
-          <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Current Handler</p>
-            <button onClick={claimHandler} className="text-blue-600 bg-blue-50 hover:bg-blue-100 px-4 py-2 rounded-lg font-bold text-sm transition-colors w-full sm:w-auto">
-              Claim as Handler
-            </button>
+        {/* Card 2: URGENT SHELTER INFO BLOCK */}
+        {isUrgent && (
+          <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 shadow-sm">
+            <h3 className="text-rose-800 font-black text-sm uppercase tracking-wider flex items-center gap-1.5 mb-3">
+              <AlertTriangle size={16} /> Urgent Shelter Case
+            </h3>
+            <div className="grid grid-cols-2 gap-3 text-sm mb-4">
+              <div>
+                <span className="text-rose-600/70 text-xs font-bold block mb-0.5">Shelter ID</span>
+                <span className="font-mono font-bold text-rose-900 bg-white px-2 py-1 rounded shadow-sm inline-block">
+                  {animal.shelter_id}
+                </span>
+              </div>
+              <div>
+                <span className="text-rose-600/70 text-xs font-bold block mb-0.5">Deadline</span>
+                <span className="font-bold text-rose-900 flex items-center gap-1">
+                  <Clock size={14} />
+                  {animal.urgent_deadline ? new Date(animal.urgent_deadline).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) : 'Unknown'}
+                </span>
+              </div>
+            </div>
+
+            {/* Actionable Contact Buttons */}
+            {shelterDetails && shelterDetails.name !== "Other / Not Listed" && (
+              <div className="flex gap-2 pt-3 border-t border-rose-200/60">
+                <a href={`tel:${shelterDetails.phone}`} className="flex-1 bg-white hover:bg-rose-100 border border-rose-200 text-rose-700 py-2 rounded-md text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-colors">
+                  <Phone size={14} /> Call
+                </a>
+                <a href={shelterDetails.map} target="_blank" rel="noreferrer" className="flex-1 bg-white hover:bg-rose-100 border border-rose-200 text-rose-700 py-2 rounded-md text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-colors">
+                  <Navigation size={14} /> Directions
+                </a>
+                <a href={shelterDetails.website} target="_blank" rel="noreferrer" className="flex-1 bg-white hover:bg-rose-100 border border-rose-200 text-rose-700 py-2 rounded-md text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-colors">
+                  <Globe size={14} /> Website
+                </a>
+              </div>
+            )}
           </div>
         )}
 
-        {/* Card 3: Abuse/Suspicious Activity Banner */}
+        {/* Card 3: Current Handler / Transfer Options */}
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Current Handler</p>
+          
+          {animal.handler_email ? (
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-sm text-slate-700">
+                  <Mail size={16} className="text-blue-600" />
+                  <a href={`mailto:${animal.handler_email}`} className="font-semibold text-blue-600 hover:underline">
+                    {animal.handler_email}
+                  </a>
+                </div>
+                
+                {isCurrentHandler && !isTransferring && (
+                  <button onClick={() => setIsTransferring(true)} className="flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50 px-2 py-1 rounded-md transition-colors">
+                    <ArrowRightLeft size={12} />
+                    Transfer
+                  </button>
+                )}
+              </div>
+
+              {isTransferring && (
+                <div className="flex gap-2">
+                  <input 
+                    type="email" 
+                    value={transferEmail}
+                    onChange={(e) => setTransferEmail(e.target.value)}
+                    placeholder="New handler's email..." 
+                    className="flex-1 border border-slate-300 p-2 rounded-lg text-sm focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none transition-all"
+                  />
+                  <button onClick={handleTransfer} disabled={isUpdating} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm font-bold shadow-sm transition-colors">
+                    Save
+                  </button>
+                  <button onClick={() => setIsTransferring(false)} className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg text-sm font-bold transition-colors">
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : session ? (
+            <button 
+              onClick={handleClaim}
+              disabled={isUpdating}
+              className="flex items-center gap-2 text-sm font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-3 py-2 rounded-lg transition-colors w-full sm:w-auto justify-center"
+            >
+              <Hand size={16} />
+              Claim as Handler
+            </button>
+          ) : (
+            <p className="text-sm text-slate-500 italic">No handler assigned yet. Sign in to claim.</p>
+          )}
+        </div>
+
+        {/* Card 4: Abuse/Suspicious Activity Banner */}
         <div className={`rounded-xl shadow-sm border p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 ${abuseReportsCount > 0 ? 'bg-rose-50 border-rose-200' : 'bg-slate-50 border-slate-200'}`}>
           <div>
             <h3 className={`font-bold flex items-center gap-1.5 ${abuseReportsCount > 0 ? 'text-rose-800' : 'text-slate-800'}`}>
@@ -240,7 +402,7 @@ export default function AnimalProfile() {
           </button>
         </div>
 
-        {/* Card 4: Identifying Details */}
+        {/* Card 5: Identifying Details Grid */}
         <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
           <h3 className="font-bold text-slate-800 mb-4 pb-2 border-b border-slate-100">Identifying Details</h3>
           <div className="grid grid-cols-2 gap-4">
@@ -277,7 +439,7 @@ export default function AnimalProfile() {
           </div>
         </div>
 
-        {/* Card 5: Sightings Timeline */}
+        {/* Card 6: Sightings Timeline */}
         <div>
           <h3 className="font-bold text-slate-800 mb-3 ml-1">Sightings Timeline</h3>
           <div className="space-y-4">
@@ -302,6 +464,9 @@ export default function AnimalProfile() {
             ))}
           </div>
         </div>
+        
+        {/* Comment Section Component */}
+        <CommentSection animalId={animal.id} />
       </div>
 
       {/* Abuse Reporting Modal */}
@@ -337,7 +502,7 @@ export default function AnimalProfile() {
                 <label className="block text-sm font-bold text-slate-700 mb-1.5">Incident Details</label>
                 <textarea 
                   className="w-full bg-slate-50 border border-slate-300 p-3 rounded-lg h-32 focus:ring-2 focus:ring-rose-600 focus:border-transparent outline-none transition-all resize-none text-sm"
-                  placeholder="Please provide as much detail as possible (e.g. Witnessed individual striking the animal, location specifics, descriptions of involved parties)..."
+                  placeholder="Please provide as much detail as possible..."
                   value={abuseForm.details}
                   onChange={(e) => setAbuseForm({...abuseForm, details: e.target.value})}
                   required
