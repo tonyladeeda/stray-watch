@@ -10,6 +10,7 @@ import AnimalProfile from './pages/AnimalProfile';
 import ProfileSettings from './pages/ProfileSettings';
 import Dashboard from './pages/Dashboard';
 import { SHELTER_DIRECTORY } from './shelterData';
+import AdminPortal from './pages/AdminPortal';
 
 export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -216,6 +217,7 @@ export default function App() {
           <Route path="/animal/:id" element={<AnimalProfile />} />
           <Route path="/profile" element={<ProfileSettings />} />
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/admin" element={<AdminPortal />} /> 
         </Routes>
       </main>
 
