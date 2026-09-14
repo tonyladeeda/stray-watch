@@ -1,15 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, ShieldCheck, Heart, Home, Stethoscope, ChevronRight, Phone, Mail } from 'lucide-react';
+import { Search, ShieldCheck, Heart, ChevronRight, Phone, Mail, Clock } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 
-const CATEGORIES = ['All', 'Fosters', 'Rescues', 'Shelters', 'Support'];
-
 export default function Directory() {
-  const [activeTab, setActiveTab] = useState('All');
+  const [activeTab, setActiveTab] = useState('Rescues');
   const [searchQuery, setSearchQuery] = useState('');
   const [directoryData, setDirectoryData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isVerifiedRescue, setIsVerifiedRescue] = useState(false);
 
   useEffect(() => {
     fetchDirectory();
@@ -17,6 +16,21 @@ export default function Directory() {
 
   const fetchDirectory = async () => {
     setLoading(true);
+    
+    // Check if user is a verified rescue to show the Foster tab
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) {
+      const { data: rescueData } = await supabase
+        .from('rescue_partners')
+        .select('is_verified')
+        .eq('user_id', session.user.id)
+        .single();
+        
+      if (rescueData?.is_verified) {
+        setIsVerifiedRescue(true);
+      }
+    }
+
     const { data, error } = await supabase
       .from('directory_profiles')
       .select('*')
@@ -29,26 +43,12 @@ export default function Directory() {
   };
 
   const filteredData = directoryData.filter(item => {
-    let tabMatch = false;
-    if (activeTab === 'All') tabMatch = true;
-    if (activeTab === 'Fosters' && item.type === 'Foster') tabMatch = true;
-    if (activeTab === 'Rescues' && item.type === 'Rescue') tabMatch = true;
-    if (activeTab === 'Shelters' && item.type === 'Shelter') tabMatch = true;
-    if (activeTab === 'Support' && item.type === 'Support') tabMatch = true;
-
+    const tabMatch = activeTab === 'All' || item.type + 's' === activeTab;
     const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase());
     return tabMatch && matchesSearch;
   });
 
-  const getIcon = (type) => {
-    switch(type) {
-      case 'Rescue': return <ShieldCheck size={18} className="text-blue-600" />;
-      case 'Foster': return <Heart size={18} className="text-rose-600" />;
-      case 'Shelter': return <Home size={18} className="text-amber-600" />;
-      case 'Support': return <Stethoscope size={18} className="text-emerald-600" />;
-      default: return null;
-    }
-  };
+  const CATEGORIES = isVerifiedRescue ? ['All', 'Rescues', 'Fosters'] : ['Rescues'];
 
   return (
     <div className="bg-slate-50 min-h-screen pb-24 font-sans text-slate-900">
@@ -66,17 +66,19 @@ export default function Directory() {
           <Search size={16} className="absolute left-3 top-3 text-slate-400" />
         </div>
 
-        <div className="flex overflow-x-auto scrollbar-hide gap-2 pb-1">
-          {CATEGORIES.map(cat => (
-            <button 
-              key={cat}
-              onClick={() => setActiveTab(cat)}
-              className={`whitespace-nowrap px-4 py-1.5 rounded-full text-xs font-bold transition-colors border ${activeTab === cat ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
-            >
-              {cat}
-            </button>
-          ))}
-        </div>
+        {isVerifiedRescue && (
+          <div className="flex overflow-x-auto scrollbar-hide gap-2 pb-1">
+            {CATEGORIES.map(cat => (
+              <button 
+                key={cat}
+                onClick={() => setActiveTab(cat)}
+                className={`whitespace-nowrap px-4 py-1.5 rounded-full text-xs font-bold transition-colors border ${activeTab === cat ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <main className="p-4 space-y-3">
@@ -89,16 +91,21 @@ export default function Directory() {
             <Link 
               key={item.id} 
               to={`/directory/${item.id}`}
-              className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:border-blue-300 transition-colors flex items-center justify-between group"
+              className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:border-blue-300 transition-colors flex items-center justify-between group relative overflow-hidden"
             >
               <div className="min-w-0 pr-4">
                 <div className="flex items-center gap-2 mb-1">
-                  {getIcon(item.type)}
+                  {item.type === 'Rescue' ? <ShieldCheck size={16} className="text-blue-600" /> : <Heart size={16} className="text-rose-600" />}
                   <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{item.type}</span>
+                  {!item.is_approved && (
+                    <span className="text-[9px] font-black uppercase tracking-wider text-amber-700 bg-amber-100 px-2 py-0.5 rounded flex items-center gap-1">
+                      <Clock size={10} /> Pending
+                    </span>
+                  )}
                 </div>
                 <h2 className="font-bold text-slate-800 text-sm truncate">{item.name}</h2>
                 <div className="flex items-center gap-3 mt-2 text-xs text-slate-500 font-medium">
-                  <span className="flex items-center gap-1"><Phone size={12}/> {item.phone}</span>
+                  {item.phone && <span className="flex items-center gap-1"><Phone size={12}/> {item.phone}</span>}
                   <span className="flex items-center gap-1 truncate"><Mail size={12}/> {item.email}</span>
                 </div>
               </div>

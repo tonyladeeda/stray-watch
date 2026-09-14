@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { 
-  Heart, Home, ShieldAlert, CheckCircle2, 
-  ArrowLeft, FileText, AlertTriangle 
+  Heart, Home, ShieldAlert, FileText, 
+  ArrowLeft, AlertTriangle 
 } from 'lucide-react';
 
 export default function FosterApplication() {
@@ -14,7 +14,7 @@ export default function FosterApplication() {
   const [hasApplied, setHasApplied] = useState(false);
 
   const [formData, setFormData] = useState({
-    fullName: '', dwellingType: 'House', rentOrOwn: 'Own', 
+    fullName: '', phone: '', dwellingType: 'House', rentOrOwn: 'Own', 
     landlordPermission: false, hoursAlone: '',
     fencedYard: false, fenceDetails: '', poolAccess: false,
     experienceLevel: 5, currentPets: '', petSocialization: 5,
@@ -24,19 +24,46 @@ export default function FosterApplication() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      if (session) checkExistingApplication(session.user.id);
-      else setLoading(false);
+      if (session) {
+        checkExistingData(session);
+      } else {
+        setLoading(false);
+      }
     });
   }, []);
 
-  const checkExistingApplication = async (userId) => {
-    const { data } = await supabase
+  const checkExistingData = async (currentSession) => {
+    // 1. Check if application already exists
+    const { data: existingApp } = await supabase
       .from('foster_applications')
       .select('status')
-      .eq('user_id', userId)
+      .eq('user_id', currentSession.user.id)
       .single();
 
-    if (data) setHasApplied(true);
+    if (existingApp) {
+      setHasApplied(true);
+      setLoading(false);
+      return;
+    }
+
+    // 2. Aggregate user info from auth metadata
+    const meta = currentSession.user.user_metadata || {};
+    const authFullName = [meta.first_name, meta.last_name].filter(Boolean).join(' ') || meta.full_name || meta.name || '';
+    const authPhone = currentSession.user.phone || meta.phone || '';
+
+    // 3. Check for an existing directory profile to pull previous phone entries
+    const { data: dirProfile } = await supabase
+      .from('directory_profiles')
+      .select('name, phone')
+      .eq('user_id', currentSession.user.id)
+      .single();
+
+    setFormData(prev => ({
+      ...prev,
+      fullName: dirProfile?.name || authFullName || prev.fullName,
+      phone: dirProfile?.phone || authPhone || prev.phone
+    }));
+
     setLoading(false);
   };
 
@@ -44,10 +71,10 @@ export default function FosterApplication() {
     e.preventDefault();
     setIsSubmitting(true);
 
-    // 1. Submit the detailed application
     const appPayload = {
       user_id: session.user.id,
       full_name: formData.fullName,
+      phone: formData.phone,
       dwelling_type: formData.dwellingType,
       rent_or_own: formData.rentOrOwn,
       landlord_permission: formData.landlordPermission,
@@ -66,16 +93,17 @@ export default function FosterApplication() {
 
     const { error: appError } = await supabase.from('foster_applications').insert([appPayload]);
 
-    // 2. Create a hidden directory profile (is_approved = false)
     if (!appError) {
-      await supabase.from('directory_profiles').insert([{
+      // Upsert directory profile to ensure phone number syncs without creating duplicates
+      await supabase.from('directory_profiles').upsert([{
         user_id: session.user.id,
         type: 'Foster',
         name: formData.fullName,
         email: session.user.email,
-        phone: 'Pending',
+        phone: formData.phone,
         is_approved: false
-      }]);
+      }], { onConflict: 'user_id' });
+      
       setHasApplied(true);
     } else {
       alert("Error submitting application.");
@@ -111,12 +139,12 @@ export default function FosterApplication() {
   return (
     <div className="bg-slate-50 min-h-screen pb-24 font-sans text-slate-900">
       <div className="bg-white p-3 border-b border-slate-200 sticky top-0 z-10 flex items-center gap-3 shadow-sm">
-        <button onClick={() => navigate(-1)} className="p-2 bg-slate-100 rounded-full text-slate-600"><ArrowLeft size={20}/></button>
+        <button onClick={() => navigate(-1)} className="p-2 bg-slate-100 rounded-full text-slate-600 hover:bg-slate-200 transition-colors"><ArrowLeft size={20}/></button>
         <h1 className="text-lg font-black text-slate-800">Foster Application</h1>
       </div>
 
       <main className="p-4">
-        <div className="bg-blue-50 border border-blue-200 p-4 rounded-xl mb-6 flex gap-3">
+        <div className="bg-blue-50 border border-blue-200 p-4 rounded-xl mb-6 flex gap-3 shadow-sm">
           <Heart className="text-blue-600 shrink-0 mt-0.5" />
           <p className="text-xs text-blue-800 leading-relaxed">
             Thank you for opening your home! Please complete this form in full. Fostering is a serious commitment, and your foster animal remains the sole legal property of the rescue network until a permanent placement is finalized.
@@ -125,29 +153,34 @@ export default function FosterApplication() {
 
         <form onSubmit={handleSubmit} className="space-y-6">
           
-          {/* Section 1: Home Environment */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
             <h2 className="font-bold text-slate-800 flex items-center gap-2 border-b border-slate-100 pb-2">
-              <Home size={18} className="text-slate-400" /> Home Environment
+              <Home size={18} className="text-slate-400" /> Personal Info & Home
             </h2>
             
-            <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Full Name</label>
-              <input type="text" name="fullName" required value={formData.fullName} onChange={handleChange} className="w-full bg-slate-50 border border-slate-300 p-3 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-600" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Full Name *</label>
+                <input type="text" name="fullName" required value={formData.fullName} onChange={handleChange} className="w-full bg-slate-50 border border-slate-300 p-3 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-600" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Phone Number *</label>
+                <input type="tel" name="phone" required placeholder="(555) 555-5555" value={formData.phone} onChange={handleChange} className="w-full bg-slate-50 border border-slate-300 p-3 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-600" />
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Dwelling Type</label>
-                <select name="dwellingType" value={formData.dwellingType} onChange={handleChange} className="w-full bg-slate-50 border border-slate-300 p-3 rounded-lg text-sm outline-none">
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Dwelling Type *</label>
+                <select name="dwellingType" value={formData.dwellingType} onChange={handleChange} className="w-full bg-slate-50 border border-slate-300 p-3 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-600">
                   <option value="House">House</option>
                   <option value="Townhome">Townhome</option>
                   <option value="Apartment">Apartment</option>
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Rent / Own</label>
-                <select name="rentOrOwn" value={formData.rentOrOwn} onChange={handleChange} className="w-full bg-slate-50 border border-slate-300 p-3 rounded-lg text-sm outline-none">
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Rent / Own *</label>
+                <select name="rentOrOwn" value={formData.rentOrOwn} onChange={handleChange} className="w-full bg-slate-50 border border-slate-300 p-3 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-600">
                   <option value="Own">Own</option>
                   <option value="Rent">Rent</option>
                 </select>
@@ -155,25 +188,24 @@ export default function FosterApplication() {
             </div>
 
             {formData.rentOrOwn === 'Rent' && (
-              <label className="flex items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-lg cursor-pointer">
+              <label className="flex items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-lg cursor-pointer transition-colors hover:border-amber-300">
                 <input type="checkbox" name="landlordPermission" checked={formData.landlordPermission} onChange={handleChange} className="w-5 h-5 text-amber-600 rounded" />
                 <span className="text-xs font-bold text-amber-900">I have written permission from my landlord to foster.</span>
               </label>
             )}
 
-            <div>
+            <div className="pt-2">
               <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Fenced Yard?</label>
               <label className="flex items-center gap-3 cursor-pointer mb-2">
                 <input type="checkbox" name="fencedYard" checked={formData.fencedYard} onChange={handleChange} className="w-5 h-5 text-blue-600 rounded" />
                 <span className="text-sm font-medium">Yes, the yard is completely fenced.</span>
               </label>
               {formData.fencedYard && (
-                <input type="text" name="fenceDetails" placeholder="Fence material and height (e.g. 6ft Wood)" value={formData.fenceDetails} onChange={handleChange} className="w-full bg-slate-50 border border-slate-300 p-3 rounded-lg text-sm mt-1" />
+                <input type="text" name="fenceDetails" placeholder="Fence material and height (e.g. 6ft Wood)" required={formData.fencedYard} value={formData.fenceDetails} onChange={handleChange} className="w-full bg-slate-50 border border-slate-300 p-3 rounded-lg text-sm mt-1 outline-none focus:ring-2 focus:ring-blue-600" />
               )}
             </div>
           </div>
 
-          {/* Section 2: Experience */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
             <h2 className="font-bold text-slate-800 flex items-center gap-2 border-b border-slate-100 pb-2">
               <ShieldAlert size={18} className="text-slate-400" /> Handling & Experience
@@ -182,16 +214,15 @@ export default function FosterApplication() {
             <div>
               <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Dog-Handling Experience (1 = Beginner, 10 = Expert)</label>
               <input type="range" name="experienceLevel" min="1" max="10" value={formData.experienceLevel} onChange={handleChange} className="w-full accent-blue-600" />
-              <div className="text-center text-sm font-black text-blue-600">{formData.experienceLevel} / 10</div>
+              <div className="text-center text-sm font-black text-blue-600 mt-1">{formData.experienceLevel} / 10</div>
             </div>
 
             <div>
               <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Current Pets</label>
-              <textarea name="currentPets" placeholder="Species, age, temperament, vaccinated?" value={formData.currentPets} onChange={handleChange} className="w-full bg-slate-50 border border-slate-300 p-3 rounded-lg text-sm h-20 resize-none"></textarea>
+              <textarea name="currentPets" placeholder="Species, age, temperament, vaccinated?" value={formData.currentPets} onChange={handleChange} className="w-full bg-slate-50 border border-slate-300 p-3 rounded-lg text-sm h-20 resize-none outline-none focus:ring-2 focus:ring-blue-600"></textarea>
             </div>
           </div>
 
-          {/* Section 3: Binding Terms (SWOT Document) */}
           <div className="bg-slate-800 p-5 rounded-2xl text-white space-y-4 shadow-md">
             <h2 className="font-bold flex items-center gap-2 border-b border-slate-600 pb-2">
               <AlertTriangle size={18} className="text-rose-400" /> Binding Foster Terms
@@ -204,8 +235,8 @@ export default function FosterApplication() {
               { key: 'agreedTransfers', label: "No Third-Party Transfers", desc: "I will not give, loan, board, or transfer the animal to friends, family, or pet sitters without approval." },
               { key: 'agreedCrate', label: "Daily Care & Training", desc: "I will utilize secure harnesses and crates as directed, and will never use prong collars or shock collars." }
             ].map(term => (
-              <label key={term.key} className="flex items-start gap-3 cursor-pointer bg-slate-700/50 p-3 rounded-lg">
-                <input type="checkbox" name={term.key} required checked={formData[term.key]} onChange={handleChange} className="w-5 h-5 text-rose-500 rounded mt-0.5" />
+              <label key={term.key} className="flex items-start gap-3 cursor-pointer bg-slate-700/50 hover:bg-slate-700 transition-colors p-3 rounded-lg">
+                <input type="checkbox" name={term.key} required checked={formData[term.key]} onChange={handleChange} className="w-5 h-5 text-rose-500 rounded mt-0.5 border-slate-500" />
                 <div>
                   <span className="block text-sm font-bold text-rose-300">{term.label}</span>
                   <span className="block text-xs text-slate-300 leading-tight mt-1">{term.desc}</span>
