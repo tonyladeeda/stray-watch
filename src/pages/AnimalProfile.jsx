@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import CommentSection from '../components/CommentSection';
 import FollowButton from '../components/FollowButton';
+import ShareButton from '../components/ShareButton'; // NEW IMPORT
 import { SHELTER_DIRECTORY } from '../shelterData';
 
 const STATUS_OPTIONS = ['Spotted', 'Rescued', 'In-care', 'Fostered', 'Adopted', 'Deceased', 'Euthanized'];
@@ -228,6 +229,13 @@ export default function AnimalProfile() {
     { key: 'physical_traits', label: 'Physical Traits & Scars', inputType: 'text' }
   ];
 
+  // SHARING PAYLOAD PREPARATION
+  const shareUrl = `${window.location.origin}/animal/${animal.id}`;
+  const shareTitle = `${isUrgent ? 'URGENT: ' : ''}${displayName} - StrayGuard`;
+  const shareText = isUrgent 
+    ? `Needs an exit from ${animal.location || 'the shelter'}. Check their profile on StrayGuard.` 
+    : `Spotted near ${originalSighting?.location || 'by a community member'}. Track their rescue journey on StrayGuard.`;
+
   return (
     <div className="pb-6">
       <div className="bg-white p-3 border-b border-slate-200 sticky top-[72px] z-10 flex items-center gap-3 shadow-sm">
@@ -267,12 +275,22 @@ export default function AnimalProfile() {
 
         <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
           <div className="flex justify-between items-start mb-3">
-            <div className="flex-grow">
+            <div className="flex-grow pr-2">
               {isEditing ? (
                 <input type="text" value={editForm.name || ''} onChange={(e) => setEditForm({...editForm, name: e.target.value})} placeholder="Name (e.g. Buddy)" className="w-full text-2xl font-black text-slate-800 border-b border-slate-300 outline-none focus:border-blue-600 mb-3 bg-slate-50 p-1 rounded" />
               ) : <h1 className="text-2xl font-black text-slate-800 mb-3">{displayName}</h1>}
             </div>
-            <FollowButton animalId={animal.id} session={session} />
+            {/* INJECTED SHARE BUTTON NEXT TO FOLLOW BUTTON */}
+            <div className="flex items-center gap-2 shrink-0">
+              <ShareButton 
+                url={shareUrl} 
+                title={shareTitle} 
+                text={shareText} 
+                className="p-2 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-full transition-colors" 
+                variant="ghost" 
+              />
+              <FollowButton animalId={animal.id} session={session} />
+            </div>
           </div>
           <div className="flex items-center">
             {session ? (
@@ -385,6 +403,13 @@ export default function AnimalProfile() {
                 <Home size={18} /> Apply to Adopt
               </button>
             )}
+            {/* Added Share Button to the placement block */}
+            <ShareButton 
+              url={shareUrl} 
+              title={shareTitle} 
+              text={shareText} 
+              className="w-full bg-slate-50 border border-slate-200 text-slate-700 font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 text-sm hover:bg-slate-100 transition-colors"
+            />
           </div>
         )}
 

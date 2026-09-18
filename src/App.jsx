@@ -17,6 +17,7 @@ import RescueDashboard from './pages/RescueDashboard';
 import ReportModal from './components/ReportModal';
 import BottomNav from './components/BottomNav';
 import FosterApplication from './pages/FosterApplication';
+import MasterProfileWizard from './pages/MasterProfileWizard';
 
 export default function App() {
   const navigate = useNavigate();
@@ -27,25 +28,45 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [showAuth, setShowAuth] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  
+  // NEW: State to hold the user's intent if they try to report while logged out
+  const [pendingReportType, setPendingReportType] = useState(null);
 
   useEffect(() => {
     const handleSession = (currentSession) => {
       setSession(currentSession);
-      // Intercept new OAuth users who haven't selected a role
-      if (currentSession && !currentSession.user.user_metadata?.onboarding_complete) {
-        setIsAuthModalOpen(true);
+      
+      if (currentSession) {
+        // 1. If they just logged in but need onboarding, show Auth modal
+        if (!currentSession.user.user_metadata?.onboarding_complete) {
+          setIsAuthModalOpen(true);
+        } 
+        // 2. If they just successfully logged in and had a pending report, launch it
+        else if (pendingReportType) {
+          setReportType(pendingReportType);
+          setIsReporting(true);
+          setIsAuthModalOpen(false);
+          setPendingReportType(null);
+        }
       }
     };
 
     supabase.auth.getSession().then(({ data: { session } }) => handleSession(session));
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => handleSession(session));
     return () => subscription.unsubscribe();
-  }, []);
+  }, [pendingReportType]);
 
   const openReportModal = (type) => {
-    setReportType(type);
     setIsMenuOpen(false);
-    setIsReporting(true);
+    
+    if (!session) {
+      // Intercept the action, save intent, and force login
+      setPendingReportType(type);
+      setIsAuthModalOpen(true);
+    } else {
+      setReportType(type);
+      setIsReporting(true);
+    }
   };
 
   const handleLogOut = async () => {
@@ -69,8 +90,8 @@ export default function App() {
   const userFullName = [userMetadata.first_name, userMetadata.last_name].filter(Boolean).join(' ') || userMetadata.full_name || userMetadata.name || 'User';
 
   return (
-    <div className="max-w-md mx-auto bg-cyan-600 min-h-screen relative font-sans text-slate-900 shadow-2xl">
-      <header className="h-16 bg-white px-4 border-b border-slate-200 sticky top-0 z-50 flex items-center justify-between shadow-sm">
+    <div className="max-w-md mx-auto bg-cyan-600 min-h-screen relative font-sans text-slate-900 shadow-2xl flex flex-col">
+      <header className="h-16 bg-white px-4 border-b border-slate-200 sticky top-0 z-50 flex items-center justify-between shadow-sm shrink-0">
         <Link to="/" className="flex items-center gap-2">
           <div className="relative flex items-center justify-center w-7 h-7">
             <Shield size={26} className="text-slate-800" strokeWidth={2} />
@@ -146,7 +167,7 @@ export default function App() {
         )}
       </header>
 
-      <main className="pb-24 min-h-[calc(100vh-4rem)] bg-slate-50">
+      <main className="pb-24 min-h-[calc(100vh-4rem)] bg-slate-50 flex-grow">
         <Routes>
           <Route path="/" element={<Feed />} />
           <Route path="/directory" element={<Directory />} />
@@ -156,6 +177,7 @@ export default function App() {
           <Route path="/admin" element={<AdminPortal />} /> 
           <Route path="/rescue-workspace" element={<RescueDashboard />} />
           <Route path="/foster-application" element={<FosterApplication />} />
+          <Route path="/foster-profile-setup" element={<MasterProfileWizard />} />
         </Routes>
       </main>
 
@@ -186,7 +208,13 @@ export default function App() {
 
       <BottomNav />
       <ReportModal isOpen={isReporting} onClose={() => setIsReporting(false)} reportType={reportType} />
-      <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
+      <AuthModal 
+        isOpen={isAuthModalOpen} 
+        onClose={() => {
+          setIsAuthModalOpen(false);
+          setPendingReportType(null); // Clear intent if they cancel login
+        }} 
+      />
     </div>
   );
 }

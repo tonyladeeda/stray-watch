@@ -1,3 +1,4 @@
+// ... (Keep your imports and GoogleIcon exactly the same as the previous file) ...
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { 
@@ -24,12 +25,6 @@ export default function AuthModal({ isOpen, onClose }) {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
 
-  const [fosterData, setFosterData] = useState({
-    phone: '', dwellingType: 'House', rentOrOwn: 'Own', 
-    landlordPermission: false, fencedYard: false, 
-    fenceDetails: '', experienceLevel: 5, currentPets: ''
-  });
-  
   const [rescueData, setRescueData] = useState({
     orgName: '', ein: '', website: '', phone: ''
   });
@@ -88,8 +83,8 @@ export default function AuthModal({ isOpen, onClose }) {
     onClose();
   };
 
-  const handleFosterSetup = async (e) => {
-    e.preventDefault();
+  // Create base shell for Foster and let them finish wizard later
+  const handleFosterSetup = async () => {
     setLoading(true);
     const { data: { session } } = await supabase.auth.getSession();
     
@@ -99,17 +94,9 @@ export default function AuthModal({ isOpen, onClose }) {
         type: 'Foster',
         name: `${firstName} ${lastName}`.trim(),
         email: session.user.email,
-        phone: fosterData.phone,
+        phone: session.user.phone || '',
         availability_status: 'Available',
-        foster_details: {
-          dwellingType: fosterData.dwellingType,
-          rentOrOwn: fosterData.rentOrOwn,
-          landlordPermission: fosterData.landlordPermission,
-          fencedYard: fosterData.fencedYard,
-          fenceDetails: fosterData.fenceDetails,
-          experienceLevel: fosterData.experienceLevel,
-          currentPets: fosterData.currentPets
-        },
+        foster_details: {},
         is_approved: false
       }], { onConflict: 'user_id' });
       await finalizeOnboarding();
@@ -237,11 +224,11 @@ export default function AuthModal({ isOpen, onClose }) {
                 </div>
               </button>
 
-              <button onClick={() => setView('foster_setup')} className="w-full flex items-center gap-4 p-4 border border-slate-200 hover:border-blue-400 hover:bg-blue-50 rounded-2xl transition-all text-left group">
+              <button onClick={handleFosterSetup} className="w-full flex items-center gap-4 p-4 border border-slate-200 hover:border-blue-400 hover:bg-blue-50 rounded-2xl transition-all text-left group">
                 <div className="bg-slate-100 group-hover:bg-blue-100 p-3 rounded-full shrink-0"><Heart size={24} className="text-blue-600" /></div>
                 <div>
                   <p className="font-black text-slate-800">Foster Home</p>
-                  <p className="text-xs text-slate-500">I have space in my home to temporarily care for rescued animals.</p>
+                  <p className="text-xs text-slate-500">Create a profile to easily apply to foster animals from verified rescues.</p>
                 </div>
               </button>
 
@@ -253,83 +240,6 @@ export default function AuthModal({ isOpen, onClose }) {
                 </div>
               </button>
             </div>
-          )}
-
-          {view === 'foster_setup' && (
-            <form onSubmit={handleFosterSetup} className="space-y-5 animate-in fade-in slide-in-from-right-4">
-              <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 mb-4 flex gap-3">
-                <Home className="text-blue-600 shrink-0 mt-0.5" size={20} />
-                <p className="text-xs text-blue-800 leading-relaxed">
-                  Your profile acts as your master foster application. Complete it once, and you can securely apply to take in animals from any verified rescue network with a single click.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">First Name *</label>
-                  <input type="text" required value={firstName} onChange={e => setFirstName(e.target.value)} className="w-full bg-slate-50 border border-slate-300 p-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Last Name *</label>
-                  <input type="text" required value={lastName} onChange={e => setLastName(e.target.value)} className="w-full bg-slate-50 border border-slate-300 p-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Phone Number *</label>
-                <input type="tel" required placeholder="(555) 555-5555" value={fosterData.phone} onChange={e => setFosterData({...fosterData, phone: e.target.value})} className="w-full bg-slate-50 border border-slate-300 p-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-              
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Dwelling Type</label>
-                  <select value={fosterData.dwellingType} onChange={e => setFosterData({...fosterData, dwellingType: e.target.value})} className="w-full bg-slate-50 border border-slate-300 p-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500">
-                    <option>House</option>
-                    <option>Townhome</option>
-                    <option>Apartment</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Rent / Own</label>
-                  <select value={fosterData.rentOrOwn} onChange={e => setFosterData({...fosterData, rentOrOwn: e.target.value})} className="w-full bg-slate-50 border border-slate-300 p-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500">
-                    <option>Own</option>
-                    <option>Rent</option>
-                  </select>
-                </div>
-              </div>
-
-              {fosterData.rentOrOwn === 'Rent' && (
-                <label className="flex items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-xl cursor-pointer transition-colors hover:border-amber-300">
-                  <input type="checkbox" checked={fosterData.landlordPermission} onChange={e => setFosterData({...fosterData, landlordPermission: e.target.checked})} className="w-5 h-5 text-amber-600 rounded" />
-                  <span className="text-xs font-bold text-amber-900">I have written permission from my landlord to foster.</span>
-                </label>
-              )}
-
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input type="checkbox" checked={fosterData.fencedYard} onChange={e => setFosterData({...fosterData, fencedYard: e.target.checked})} className="w-5 h-5 text-blue-600 rounded" />
-                  <span className="text-sm font-bold text-slate-700">The yard is completely fenced.</span>
-                </label>
-                {fosterData.fencedYard && (
-                  <input type="text" placeholder="Fence material and height (e.g. 6ft Wood)" required={fosterData.fencedYard} value={fosterData.fenceDetails} onChange={e => setFosterData({...fosterData, fenceDetails: e.target.value})} className="w-full bg-white border border-slate-300 p-3 rounded-lg text-sm mt-3 outline-none focus:ring-2 focus:ring-blue-500" />
-                )}
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Dog-Handling Experience</label>
-                <input type="range" min="1" max="10" value={fosterData.experienceLevel} onChange={e => setFosterData({...fosterData, experienceLevel: parseInt(e.target.value)})} className="w-full accent-blue-600" />
-                <div className="text-center text-xs font-black text-blue-600 mt-1">{fosterData.experienceLevel} / 10</div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Current Pets</label>
-                <textarea required placeholder="Species, age, temperament, vaccinated?" value={fosterData.currentPets} onChange={e => setFosterData({...fosterData, currentPets: e.target.value})} className="w-full bg-slate-50 border border-slate-300 p-3 rounded-xl h-20 resize-none text-sm outline-none focus:ring-2 focus:ring-blue-500"></textarea>
-              </div>
-
-              <button type="submit" disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-4 rounded-xl shadow-md transition-all text-lg mt-4 disabled:opacity-50">
-                {loading ? 'Saving Master Profile...' : 'Save Master Profile'}
-              </button>
-            </form>
           )}
 
           {view === 'rescue_setup' && (

@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { 
   User, Mail, Phone, Building, FileText, 
-  Globe, ShieldCheck, Check, Heart, CreditCard, Trash2, AlertTriangle, Home
+  Globe, ShieldCheck, Check, Heart, CreditCard, Trash2, AlertTriangle, ChevronRight
 } from 'lucide-react';
 
 export default function ProfileSettings() {
+  const navigate = useNavigate();
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -14,15 +16,11 @@ export default function ProfileSettings() {
   
   const [userRole, setUserRole] = useState('Spotter');
   const [isVerified, setIsVerified] = useState(false);
+  const [fosterCompletion, setFosterCompletion] = useState(0);
 
   const [formData, setFormData] = useState({
     firstName: '', lastName: '', email: '', phone: '',
-    availability: 'Available',
-    // Foster JSONB mapped fields
-    dwellingType: 'House', rentOrOwn: 'Own', landlordPermission: false,
-    fencedYard: false, fenceDetails: '', experienceLevel: 5, currentPets: '',
-    // Rescue mapped fields
-    orgName: '', ein: '', website: ''
+    availability: 'Available', orgName: '', ein: '', website: ''
   });
 
   useEffect(() => {
@@ -58,20 +56,12 @@ export default function ProfileSettings() {
       if (fosterData) {
         setUserRole('Foster');
         setIsVerified(fosterData.is_approved);
+        setFormData(prev => ({ ...prev, phone: fosterData.phone || prev.phone, availability: fosterData.availability_status || 'Available' }));
         
+        // Calculate a rough completion percentage based on the JSONB keys
         const details = fosterData.foster_details || {};
-        setFormData(prev => ({ 
-          ...prev, 
-          phone: fosterData.phone || prev.phone, 
-          availability: fosterData.availability_status || 'Available',
-          dwellingType: details.dwellingType || 'House',
-          rentOrOwn: details.rentOrOwn || 'Own',
-          landlordPermission: details.landlordPermission || false,
-          fencedYard: details.fencedYard || false,
-          fenceDetails: details.fenceDetails || '',
-          experienceLevel: details.experienceLevel || 5,
-          currentPets: details.currentPets || ''
-        }));
+        const keys = Object.keys(details);
+        setFosterCompletion(keys.length > 20 ? 100 : Math.round((keys.length / 20) * 100));
       }
     }
     setLoading(false);
@@ -90,20 +80,7 @@ export default function ProfileSettings() {
 
     if (userRole === 'Foster' || userRole === 'Rescue') {
       const dirUpdate = { name: userRole === 'Rescue' ? formData.orgName : fullName, phone: formData.phone };
-      
-      if (userRole === 'Foster') {
-        dirUpdate.availability_status = formData.availability;
-        dirUpdate.foster_details = {
-          dwellingType: formData.dwellingType,
-          rentOrOwn: formData.rentOrOwn,
-          landlordPermission: formData.landlordPermission,
-          fencedYard: formData.fencedYard,
-          fenceDetails: formData.fenceDetails,
-          experienceLevel: formData.experienceLevel,
-          currentPets: formData.currentPets
-        };
-      }
-      
+      if (userRole === 'Foster') dirUpdate.availability_status = formData.availability;
       await supabase.from('directory_profiles').update(dirUpdate).eq('user_id', session.user.id);
     }
 
@@ -121,11 +98,8 @@ export default function ProfileSettings() {
   const handleDeleteAccount = async () => {
     const confirmDelete = window.confirm("WARNING: Are you sure you want to permanently delete your StrayGuard account? This action cannot be undone.");
     if (!confirmDelete) return;
-
     setIsDeleting(true);
-    
     const { error } = await supabase.rpc('delete_user');
-    
     if (error) {
       alert("Failed to delete account. Ensure the database function is installed.");
       setIsDeleting(false);
@@ -156,7 +130,6 @@ export default function ProfileSettings() {
 
       <main className="p-4 space-y-6">
         
-        {/* Profile Avatar Header */}
         <div className="flex flex-col items-center py-4">
           {avatarUrl ? (
             <img src={avatarUrl} alt="Avatar" className="w-24 h-24 rounded-full object-cover border-4 border-white shadow-lg bg-slate-100 mb-3" />
@@ -170,7 +143,27 @@ export default function ProfileSettings() {
           </p>
         </div>
 
-        <form onSubmit={handleSave} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-6">
+        {/* Foster Launchpad Card */}
+        {userRole === 'Foster' && (
+          <div className="bg-gradient-to-br from-blue-600 to-cyan-500 rounded-2xl p-5 shadow-lg text-white">
+            <div className="flex items-start justify-between mb-2">
+              <div className="bg-white/20 p-2 rounded-full"><FileText size={20} className="text-white" /></div>
+              <span className="text-xs font-black bg-white/20 px-2 py-1 rounded-full">{fosterCompletion}% Complete</span>
+            </div>
+            <h3 className="font-black text-lg mb-1 mt-3">Master Application</h3>
+            <p className="text-xs text-blue-100 leading-relaxed mb-5">
+              Keep your home details, references, and yard setup up-to-date so you can apply for urgent dogs instantly.
+            </p>
+            <button 
+              onClick={() => navigate('/foster-profile-setup')}
+              className="w-full bg-white text-blue-600 font-bold py-3 rounded-xl shadow-sm hover:bg-blue-50 transition-colors flex items-center justify-center gap-2"
+            >
+              {fosterCompletion === 100 ? 'Edit Application' : 'Continue Application'} <ChevronRight size={16} />
+            </button>
+          </div>
+        )}
+
+        <form onSubmit={handleSave} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-5">
           <div>
             <h2 className="font-bold text-slate-800 mb-4 flex items-center gap-2 border-b border-slate-100 pb-2">
               <User size={18} className="text-cyan-600" /> Account Details
@@ -205,66 +198,15 @@ export default function ProfileSettings() {
           </div>
 
           {userRole === 'Foster' && (
-            <div className="pt-2 space-y-5">
+            <div className="pt-2">
               <h2 className="font-bold text-slate-800 mb-4 flex items-center gap-2 border-b border-slate-100 pb-2">
-                <Heart size={18} className="text-blue-600" /> Foster Master Profile
+                <Heart size={18} className="text-blue-600" /> Current Status
               </h2>
-              
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Current Status</label>
-                <select value={formData.availability} onChange={e => setFormData({...formData, availability: e.target.value})} className="w-full bg-slate-50 border border-slate-300 p-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-600 font-bold text-slate-700">
-                  <option value="Available">🟢 Ready to Foster</option>
-                  <option value="Fostering">🟡 Currently Fostering</option>
-                  <option value="Resting">🔴 Taking a Break</option>
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Dwelling Type</label>
-                  <select value={formData.dwellingType} onChange={e => setFormData({...formData, dwellingType: e.target.value})} className="w-full bg-slate-50 border border-slate-300 p-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500">
-                    <option>House</option>
-                    <option>Townhome</option>
-                    <option>Apartment</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Rent / Own</label>
-                  <select value={formData.rentOrOwn} onChange={e => setFormData({...formData, rentOrOwn: e.target.value})} className="w-full bg-slate-50 border border-slate-300 p-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500">
-                    <option>Own</option>
-                    <option>Rent</option>
-                  </select>
-                </div>
-              </div>
-
-              {formData.rentOrOwn === 'Rent' && (
-                <label className="flex items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-xl cursor-pointer transition-colors hover:border-amber-300">
-                  <input type="checkbox" checked={formData.landlordPermission} onChange={e => setFormData({...formData, landlordPermission: e.target.checked})} className="w-5 h-5 text-amber-600 rounded" />
-                  <span className="text-xs font-bold text-amber-900">I have written permission from my landlord.</span>
-                </label>
-              )}
-
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input type="checkbox" checked={formData.fencedYard} onChange={e => setFormData({...formData, fencedYard: e.target.checked})} className="w-5 h-5 text-blue-600 rounded" />
-                  <span className="text-sm font-bold text-slate-700">The yard is completely fenced.</span>
-                </label>
-                {formData.fencedYard && (
-                  <input type="text" placeholder="Fence material and height (e.g. 6ft Wood)" required={formData.fencedYard} value={formData.fenceDetails} onChange={e => setFormData({...formData, fenceDetails: e.target.value})} className="w-full bg-white border border-slate-300 p-3 rounded-lg text-sm mt-3 outline-none focus:ring-2 focus:ring-blue-500" />
-                )}
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Dog-Handling Experience</label>
-                <input type="range" min="1" max="10" value={formData.experienceLevel} onChange={e => setFormData({...formData, experienceLevel: parseInt(e.target.value)})} className="w-full accent-blue-600" />
-                <div className="text-center text-xs font-black text-blue-600 mt-1">{formData.experienceLevel} / 10</div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Current Pets</label>
-                <textarea required placeholder="Species, age, temperament, vaccinated?" value={formData.currentPets} onChange={e => setFormData({...formData, currentPets: e.target.value})} className="w-full bg-slate-50 border border-slate-300 p-3 rounded-xl h-20 resize-none text-sm outline-none focus:ring-2 focus:ring-blue-500"></textarea>
-              </div>
-
+              <select value={formData.availability} onChange={e => setFormData({...formData, availability: e.target.value})} className="w-full bg-slate-50 border border-slate-300 p-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-600 font-bold text-slate-700">
+                <option value="Available">🟢 Ready to Foster</option>
+                <option value="Fostering">🟡 Currently Fostering</option>
+                <option value="Resting">🔴 Taking a Break</option>
+              </select>
             </div>
           )}
 
