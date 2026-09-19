@@ -10,12 +10,13 @@ import ShareButton from '../components/ShareButton';
 
 export default function Feed() {
   const [reports, setReports] = useState([]);
+  const [rescueMap, setRescueMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState('list');
   const [session, setSession] = useState(null);
   
   // Stream & Filter State
-  const [primaryStream, setPrimaryStream] = useState('Recent'); // 'Recent', 'Urgent', 'Following'
+  const [primaryStream, setPrimaryStream] = useState('Recent');
   const [followedAnimals, setFollowedAnimals] = useState(new Set());
   const [showFiltersModal, setShowFiltersModal] = useState(false);
   const [advancedFilters, setAdvancedFilters] = useState({
@@ -47,6 +48,8 @@ export default function Feed() {
 
   const fetchFeed = async () => {
     setLoading(true);
+    
+    // Fetch Sightings and Animals
     const { data: sightings } = await supabase
       .from('sightings')
       .select('*, animal:animals(*)')
@@ -54,6 +57,20 @@ export default function Feed() {
 
     if (sightings) setReports(sightings);
 
+    // Fetch Rescue Partners to map handler_id to Rescue Details
+    const { data: rescues } = await supabase
+      .from('rescue_partners')
+      .select('user_id, name, avatar_url');
+      
+    if (rescues) {
+      const map = rescues.reduce((acc, rescue) => {
+        acc[rescue.user_id] = rescue;
+        return acc;
+      }, {});
+      setRescueMap(map);
+    }
+
+    // Fetch Comments
     const { data: commentsData } = await supabase
       .from('comments')
       .select('*, profiles(first_name)')
@@ -108,11 +125,9 @@ export default function Feed() {
   const filteredReports = reports.filter(report => {
     if (report.animal?.is_archived) return false;
 
-    // Primary Stream Routing
     if (primaryStream === 'Urgent' && report.animal?.record_type !== 'Shelter Urgent') return false;
     if (primaryStream === 'Following' && !followedAnimals.has(report.animal_id)) return false;
 
-    // Advanced Filters
     const a = report.animal || {};
     if (advancedFilters.type && a.type !== advancedFilters.type) return false;
     if (advancedFilters.sex && a.sex !== advancedFilters.sex && a.gender !== advancedFilters.sex) return false;
@@ -138,10 +153,8 @@ export default function Feed() {
   return (
     <div className="pb-6">
       
-      {/* Dynamic Header: Modern Segmented Control & Action Row */}
       <div className="bg-white/95 backdrop-blur-sm px-4 py-3 border-b border-slate-200 sticky top-16 z-30 shadow-sm flex flex-col gap-3">
         
-        {/* Full-Width Segmented Control */}
         <div className="flex bg-slate-100 p-1 rounded-xl w-full">
           <button 
             onClick={() => setPrimaryStream('Recent')}
@@ -166,7 +179,6 @@ export default function Feed() {
           </button>
         </div>
 
-        {/* Action Row: Filters & View Mode */}
         <div className="flex justify-between items-center">
           <button 
             onClick={() => setShowFiltersModal(true)} 
@@ -224,6 +236,9 @@ export default function Feed() {
                     const isUrgent = report.animal?.record_type === 'Shelter Urgent';
                     const deadline = report.animal?.urgent_deadline ? new Date(report.animal.urgent_deadline) : null;
                     const shareUrl = `${window.location.origin}/animal/${report.animal_id}`;
+                    
+                    // Lookup Rescue details
+                    const rescue = rescueMap[report.animal?.handler_id];
 
                     return (
                       <React.Fragment key={report.id}>
@@ -278,6 +293,22 @@ export default function Feed() {
                                 <p className="text-xs font-mono text-slate-500 mb-1">ID: {report.animal.shelter_id}</p>
                               )}
                             </Link>
+
+                            {/* --- INJECTED RESCUE BADGE --- */}
+                            {rescue && viewMode === 'list' && (
+                              <Link to={`/rescue/${report.animal.handler_id}`} className="flex items-center gap-2 mb-3 w-fit group">
+                                {rescue.avatar_url ? (
+                                  <img src={rescue.avatar_url} className="w-5 h-5 rounded-full object-cover border border-slate-200" alt={rescue.name} />
+                                ) : (
+                                  <div className="w-5 h-5 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center">
+                                    <Building size={10} className="text-slate-400" />
+                                  </div>
+                                )}
+                                <span className="text-xs font-bold text-slate-500 group-hover:text-cyan-600 transition-colors">
+                                  {rescue.name}
+                                </span>
+                              </Link>
+                            )}
                             
                             {viewMode === 'list' && (
                               <>
@@ -323,7 +354,6 @@ export default function Feed() {
                           </div>
                         </div>
 
-                        {/* --- THE INJECTED FOSTER CTA --- */}
                         {showCTA && (
                           <div className={`${viewMode === 'grid' ? 'col-span-2' : ''} bg-gradient-to-br from-cyan-600 to-blue-700 rounded-2xl p-6 shadow-md text-white my-2 relative overflow-hidden flex flex-col items-center text-center`}>
                             <Heart size={80} className="absolute -top-6 -right-6 text-white/10 rotate-12" />
@@ -355,7 +385,6 @@ export default function Feed() {
         )}
       </div>
 
-      {/* --- ADVANCED FILTERS MODAL --- */}
       {showFiltersModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex justify-center items-end sm:items-center p-0 sm:p-4">
           <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl p-6 animate-in slide-in-from-bottom-10 sm:slide-in-from-bottom-0 sm:zoom-in-95">

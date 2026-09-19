@@ -3,7 +3,7 @@ import { Routes, Route, Link, useNavigate } from 'react-router-dom';
 import AuthModal from './components/AuthModal';
 import { 
   Camera, Plus, Clock, X, Shield, PawPrint, 
-  Bell, Settings as SettingsIcon, Bug, FileText, LogOut, Edit2 
+  Bell, Settings as SettingsIcon, Bug, FileText, LogOut, Edit2, User
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import Auth from './Auth';
@@ -18,6 +18,7 @@ import ReportModal from './components/ReportModal';
 import BottomNav from './components/BottomNav';
 import FosterApplication from './pages/FosterApplication';
 import MasterProfileWizard from './pages/MasterProfileWizard';
+import RescueProfile from './pages/RescueProfile';
 
 export default function App() {
   const navigate = useNavigate();
@@ -29,7 +30,6 @@ export default function App() {
   const [showAuth, setShowAuth] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   
-  // NEW: State to hold the user's intent if they try to report while logged out
   const [pendingReportType, setPendingReportType] = useState(null);
 
   useEffect(() => {
@@ -37,11 +37,9 @@ export default function App() {
       setSession(currentSession);
       
       if (currentSession) {
-        // 1. If they just logged in but need onboarding, show Auth modal
         if (!currentSession.user.user_metadata?.onboarding_complete) {
           setIsAuthModalOpen(true);
         } 
-        // 2. If they just successfully logged in and had a pending report, launch it
         else if (pendingReportType) {
           setReportType(pendingReportType);
           setIsReporting(true);
@@ -60,7 +58,6 @@ export default function App() {
     setIsMenuOpen(false);
     
     if (!session) {
-      // Intercept the action, save intent, and force login
       setPendingReportType(type);
       setIsAuthModalOpen(true);
     } else {
@@ -88,6 +85,9 @@ export default function App() {
   const avatarUrl = userMetadata.avatar_url || userMetadata.picture;
   const userInitial = userMetadata.first_name?.[0] || userMetadata.full_name?.[0] || session?.user?.email?.[0] || 'U';
   const userFullName = [userMetadata.first_name, userMetadata.last_name].filter(Boolean).join(' ') || userMetadata.full_name || userMetadata.name || 'User';
+  
+  // NEW: Determine route for their public profile
+  const publicProfileRoute = userMetadata.account_type === 'Rescue' ? `/rescue/${session?.user?.id}` : `/profile`;
 
   return (
     <div className="max-w-md mx-auto bg-cyan-600 min-h-screen relative font-sans text-slate-900 shadow-2xl flex flex-col">
@@ -139,14 +139,15 @@ export default function App() {
                     </div>
                     
                     <div className="p-2 space-y-1">
+                      {/* --- INJECTED PUBLIC PROFILE LINK --- */}
+                      <Link to={publicProfileRoute} onClick={() => setIsProfileMenuOpen(false)} className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 text-slate-700 font-bold text-sm transition-colors">
+                        <User size={18} className="text-slate-400" /> View Public Profile
+                      </Link>
                       <Link to="/profile" onClick={() => setIsProfileMenuOpen(false)} className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 text-slate-700 font-bold text-sm transition-colors">
                         <SettingsIcon size={18} className="text-slate-400" /> Settings
                       </Link>
                       <button onClick={() => { setIsProfileMenuOpen(false); alert('Feedback modal goes here'); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 text-slate-700 font-bold text-sm transition-colors">
                         <Bug size={18} className="text-slate-400" /> Give Feedback
-                      </button>
-                      <button onClick={() => { setIsProfileMenuOpen(false); alert('Release notes go here'); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 text-slate-700 font-bold text-sm transition-colors">
-                        <FileText size={18} className="text-slate-400" /> Release Notes
                       </button>
                     </div>
                     
@@ -175,6 +176,7 @@ export default function App() {
           <Route path="/profile" element={<ProfileSettings />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/admin" element={<AdminPortal />} /> 
+          <Route path="/rescue/:id?" element={<RescueProfile />} />
           <Route path="/rescue-workspace" element={<RescueDashboard />} />
           <Route path="/foster-application" element={<FosterApplication />} />
           <Route path="/foster-profile-setup" element={<MasterProfileWizard />} />
@@ -212,7 +214,7 @@ export default function App() {
         isOpen={isAuthModalOpen} 
         onClose={() => {
           setIsAuthModalOpen(false);
-          setPendingReportType(null); // Clear intent if they cancel login
+          setPendingReportType(null); 
         }} 
       />
     </div>

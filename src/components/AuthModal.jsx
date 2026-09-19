@@ -1,4 +1,3 @@
-// ... (Keep your imports and GoogleIcon exactly the same as the previous file) ...
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { 
@@ -78,18 +77,28 @@ export default function AuthModal({ isOpen, onClose }) {
     setLoading(false);
   };
 
-  const finalizeOnboarding = async () => {
-    await supabase.auth.updateUser({ data: { onboarding_complete: true } });
-    onClose();
+  // Stamp the role directly into the Auth user_metadata
+  const finalizeOnboarding = async (accountType = 'Spotter') => {
+    const { error } = await supabase.auth.updateUser({ 
+      data: { 
+        onboarding_complete: true,
+        account_type: accountType
+      } 
+    });
+    
+    if (error) {
+      alert("Error finalizing profile: " + error.message);
+    } else {
+      onClose();
+    }
   };
 
-  // Create base shell for Foster and let them finish wizard later
   const handleFosterSetup = async () => {
     setLoading(true);
     const { data: { session } } = await supabase.auth.getSession();
     
     if (session) {
-      await supabase.from('directory_profiles').upsert([{
+      const { error: dirError } = await supabase.from('directory_profiles').upsert([{
         user_id: session.user.id,
         type: 'Foster',
         name: `${firstName} ${lastName}`.trim(),
@@ -99,7 +108,14 @@ export default function AuthModal({ isOpen, onClose }) {
         foster_details: {},
         is_approved: false
       }], { onConflict: 'user_id' });
-      await finalizeOnboarding();
+
+      if (dirError) {
+        alert("Error creating Foster profile: " + dirError.message);
+        setLoading(false);
+        return;
+      }
+      
+      await finalizeOnboarding('Foster');
     }
     setLoading(false);
   };
@@ -110,7 +126,8 @@ export default function AuthModal({ isOpen, onClose }) {
     const { data: { session } } = await supabase.auth.getSession();
     
     if (session) {
-      await supabase.from('rescue_partners').upsert([{
+      // 1. Create Rescue Partner Record
+      const { error: rescueError } = await supabase.from('rescue_partners').upsert([{
         user_id: session.user.id,
         email: session.user.email,
         name: rescueData.orgName,
@@ -120,7 +137,14 @@ export default function AuthModal({ isOpen, onClose }) {
         is_verified: false
       }], { onConflict: 'user_id' });
 
-      await supabase.from('directory_profiles').upsert([{
+      if (rescueError) {
+        alert("Database Error (Rescue Partners): " + rescueError.message);
+        setLoading(false);
+        return;
+      }
+
+      // 2. Create Directory Profile
+      const { error: dirError } = await supabase.from('directory_profiles').upsert([{
         user_id: session.user.id,
         type: 'Rescue',
         name: rescueData.orgName,
@@ -129,7 +153,14 @@ export default function AuthModal({ isOpen, onClose }) {
         is_approved: false
       }], { onConflict: 'user_id' });
       
-      await finalizeOnboarding();
+      if (dirError) {
+        alert("Database Error (Directory): " + dirError.message);
+        setLoading(false);
+        return;
+      }
+      
+      // 3. Finalize and tag as Rescue
+      await finalizeOnboarding('Rescue');
     }
     setLoading(false);
   };
@@ -214,7 +245,7 @@ export default function AuthModal({ isOpen, onClose }) {
               
               <button onClick={async () => {
                 setLoading(true);
-                await finalizeOnboarding();
+                await finalizeOnboarding('Spotter');
                 setLoading(false);
               }} className="w-full flex items-center gap-4 p-4 border border-slate-200 hover:border-cyan-400 hover:bg-cyan-50 rounded-2xl transition-all text-left group">
                 <div className="bg-slate-100 group-hover:bg-cyan-100 p-3 rounded-full shrink-0"><Camera size={24} className="text-cyan-600" /></div>
