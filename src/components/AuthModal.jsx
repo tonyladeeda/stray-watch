@@ -120,46 +120,56 @@ export default function AuthModal({ isOpen, onClose }) {
     setLoading(false);
   };
 
-  const handleRescueSetup = async (e) => {
-    e.preventDefault();
+  const handleRescueSetup = async () => {
     setLoading(true);
     const { data: { session } } = await supabase.auth.getSession();
     
     if (session) {
-      // 1. Create Rescue Partner Record
-      const { error: rescueError } = await supabase.from('rescue_partners').upsert([{
-        user_id: session.user.id,
-        email: session.user.email,
-        name: rescueData.orgName,
-        ein: rescueData.ein,
-        website: rescueData.website,
-        status: 'pending',
-        is_verified: false
-      }], { onConflict: 'user_id' });
+      // 1. Create the Rescue Organization Page
+      const { data: rescueData, error: rescueError } = await supabase
+        .from('rescue_partners')
+        .insert([{
+          name: orgName,
+          user_id: session.user.id // Keeping as legacy creator reference
+        }])
+        .select()
+        .single();
 
       if (rescueError) {
-        alert("Database Error (Rescue Partners): " + rescueError.message);
+        alert("Error creating Rescue profile: " + rescueError.message);
         setLoading(false);
         return;
       }
 
-      // 2. Create Directory Profile
+      // 2. Link the human user as the Team Owner
+      const { error: teamError } = await supabase
+        .from('rescue_team_members')
+        .insert([{
+          rescue_id: rescueData.id,
+          user_id: session.user.id,
+          role: 'owner'
+        }]);
+
+      if (teamError) {
+        console.error("Failed to assign team role:", teamError.message);
+      }
+      
+      // 3. Finalize their personal directory profile
       const { error: dirError } = await supabase.from('directory_profiles').upsert([{
         user_id: session.user.id,
         type: 'Rescue',
-        name: rescueData.orgName,
+        name: `${firstName} ${lastName}`.trim(),
         email: session.user.email,
-        phone: rescueData.phone,
+        phone: session.user.phone || '',
         is_approved: false
       }], { onConflict: 'user_id' });
-      
+
       if (dirError) {
-        alert("Database Error (Directory): " + dirError.message);
+        alert("Error creating Directory profile: " + dirError.message);
         setLoading(false);
         return;
       }
       
-      // 3. Finalize and tag as Rescue
       await finalizeOnboarding('Rescue');
     }
     setLoading(false);

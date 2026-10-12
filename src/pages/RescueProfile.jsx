@@ -3,12 +3,12 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { 
   MapPin, Globe, Mail, Phone, ShieldCheck, 
-  PlusCircle, Edit2, Heart, MessageSquare, Image as ImageIcon,
-  Building 
+  PlusCircle, Edit2, MessageSquare, Image as ImageIcon,
+  Building, Share2, Grid, List, Activity, DollarSign, 
+  Star, Pin, HeartHandshake, Link as LinkIcon
 } from 'lucide-react';
 import FollowButton from '../components/FollowButton';
-import ShareButton from '../components/ShareButton';
-import ReportModal from '../components/ReportModal'; // NEW: Import the modal
+import ReportModal from '../components/ReportModal';
 
 export default function RescueProfile() {
   const { id } = useParams(); 
@@ -19,205 +19,338 @@ export default function RescueProfile() {
   const [animals, setAnimals] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  // NEW: State to control the "Add Animal" modal
+  // New UI & Workspace States
+  const [activeTab, setActiveTab] = useState('feed'); 
+  const [viewMode, setViewMode] = useState('grid'); 
   const [isAddingAnimal, setIsAddingAnimal] = useState(false);
+  const [isTeamMember, setIsTeamMember] = useState(false);
 
   useEffect(() => {
     const initProfile = async () => {
       const { data: { session: currentSession } } = await supabase.auth.getSession();
       setSession(currentSession);
       
-      const targetUserId = id || currentSession?.user?.id;
-      if (!targetUserId) {
+      let targetRescueId = id;
+
+      // 1. If no ID in URL, fetch their assigned workspace from the new team table
+      if (!targetRescueId && currentSession) {
+        const { data: teamData } = await supabase
+          .from('rescue_team_members')
+          .select('rescue_id')
+          .eq('user_id', currentSession.user.id)
+          .maybeSingle();
+          
+        if (teamData) targetRescueId = teamData.rescue_id;
+      }
+
+      if (!targetRescueId) {
         navigate('/');
         return;
       }
 
-      const { data: rescueData } = await supabase
+      // 2. Fetch the Rescue Organization by its primary ID
+      let { data: rescueData } = await supabase
         .from('rescue_partners')
         .select('*')
-        .eq('user_id', targetUserId)
+        .eq('id', targetRescueId)
         .maybeSingle();
 
+      // Fallback: If a guest clicked an old link that uses the legacy user_id
+      if (!rescueData) {
+        const { data: legacyData } = await supabase
+          .from('rescue_partners')
+          .select('*')
+          .eq('user_id', targetRescueId)
+          .maybeSingle();
+          
+        rescueData = legacyData;
+      }
+
       if (rescueData) {
+        // Check if current user is an admin/editor for this rescue
+        if (currentSession) {
+          const { data: roleData } = await supabase
+            .from('rescue_team_members')
+            .select('role')
+            .eq('rescue_id', targetRescueId)
+            .eq('user_id', currentSession.user.id)
+            .maybeSingle();
+          
+          if (roleData) setIsTeamMember(true);
+        }
+
+        // Fetch fallback directory info (using the creator's user_id for now)
         const { data: dirData } = await supabase
           .from('directory_profiles')
-          .select('phone')
-          .eq('user_id', targetUserId)
+          .select('phone, location, bio, social_links')
+          .eq('user_id', rescueData.user_id)
           .maybeSingle();
 
-        setRescue({ ...rescueData, phone: dirData?.phone || '' });
+        setRescue({ 
+          ...rescueData, 
+          phone: dirData?.phone || '', 
+          location: dirData?.location || '',
+          bio: dirData?.bio || '',
+          social_links: dirData?.social_links || {}
+        });
         
+        // Fetch Animals (Using creator's ID to keep backward compatibility)
         const { data: animalData } = await supabase
           .from('animals')
           .select('*, sightings(image_url, image_urls)')
-          .eq('handler_id', targetUserId)
+          .eq('handler_id', rescueData.user_id)
           .order('created_at', { ascending: false });
           
         if (animalData) setAnimals(animalData);
       }
-      
       setLoading(false);
     };
 
     initProfile();
-  }, [id, navigate, isAddingAnimal]); // Added isAddingAnimal to dependency array to refresh grid when modal closes
+  }, [id, navigate, isAddingAnimal]);
 
-  if (loading) return <div className="p-8 text-center font-bold text-slate-500 mt-10">Loading Rescue Profile...</div>;
+  if (loading) return <div className="p-8 text-center font-bold text-slate-500 mt-10">Loading Workspace...</div>;
   if (!rescue) return <div className="p-8 text-center font-bold text-slate-800 mt-10">Rescue not found.</div>;
-
-  const isOwner = session?.user?.id === rescue.user_id;
-  const rescuePhone = rescue.phone;
   
-  const shareUrl = `${window.location.origin}/rescue/${rescue.user_id}`;
-  const shareTitle = `${rescue.name} on StrayGuard`;
-  const shareText = `Check out ${rescue.name}'s adoptable and foster-ready animals on StrayGuard.`;
+  const capacity = { 
+    current: animals.length, 
+    max: rescue.max_capacity || 40, 
+    stress: rescue.stress_limit || 35 
+  };
+  const capacityPercentage = Math.min((capacity.current / capacity.max) * 100, 100);
+  const isStressed = capacity.current >= capacity.stress;
+
+  const handleShare = () => {
+    if (navigator.share) {
+      navigator.share({
+        title: `${rescue.name} on StrayGuard`,
+        url: `${window.location.origin}/rescue/${rescue.id}`
+      });
+    }
+  };
 
   return (
     <div className="bg-slate-50 min-h-screen pb-24 font-sans text-slate-900">
       
-      <div className="bg-white px-4 pt-6 pb-4 border-b border-slate-200 shadow-sm">
-        <div className="max-w-2xl mx-auto">
+      {/* --- TOP PROFILE HEADER --- */}
+      <div className="bg-white pt-6 pb-2 border-b border-slate-200">
+        <div className="max-w-2xl mx-auto px-4">
           
-          <div className="flex items-start gap-4 mb-4">
-            <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full border-4 border-white shadow-md bg-slate-100 flex-shrink-0 flex items-center justify-center overflow-hidden relative group">
+          {/* Avatar & High-Level Stats */}
+          <div className="flex items-center gap-6 mb-4">
+            <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full border-2 border-slate-100 shadow-sm bg-indigo-50 text-indigo-300 flex-shrink-0 flex items-center justify-center overflow-hidden relative">
               {rescue.avatar_url ? (
                 <img src={rescue.avatar_url} alt={rescue.name} className="w-full h-full object-cover" />
               ) : (
-                <Building size={32} className="text-slate-300" />
-              )}
-              {isOwner && (
-                <button onClick={() => navigate('/profile')} className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white">
-                  <Edit2 size={18} />
-                </button>
+                <Building size={32} />
               )}
             </div>
             
-            <div className="flex-grow pt-1">
-              <h1 className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight flex items-center gap-1.5">
-                {rescue.name} 
-                {rescue.is_verified && <ShieldCheck size={20} className="text-emerald-500" />}
-              </h1>
-              <div className="flex items-center gap-4 mt-2 text-sm font-bold text-slate-600">
-                <div className="flex flex-col">
-                  <span className="text-slate-900 text-lg">{animals.length}</span>
-                  <span className="text-[10px] uppercase tracking-wider text-slate-400">Rescues</span>
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-slate-900 text-lg">0</span>
-                  <span className="text-[10px] uppercase tracking-wider text-slate-400">Followers</span>
-                </div>
+            <div className="flex-grow flex justify-around text-center">
+              <div className="flex flex-col">
+                <span className="text-slate-900 font-black text-lg">{animals.length}</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Animals</span>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-slate-900 font-black text-lg">1.2k</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Followers</span>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-slate-900 font-black text-lg">4.9</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1 justify-center"><Star size={10} className="fill-amber-400 text-amber-400"/> Rating</span>
               </div>
             </div>
           </div>
 
-          <div className="mb-5">
-            <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap mb-3">
-              {rescue.bio || (isOwner ? <span className="italic text-slate-400">Add a bio to tell the community about your mission...</span> : "No bio provided.")}
+          {/* Org Name & Bio */}
+          <div className="mb-4">
+            <h1 className="text-lg sm:text-xl font-black text-slate-900 flex items-center gap-1.5">
+              {rescue.name} {rescue.is_verified && <ShieldCheck size={18} className="text-emerald-500" />}
+            </h1>
+            <p className="text-xs font-bold text-slate-500 mb-2 flex items-center gap-1">
+              <MapPin size={12} /> {rescue.location || "Location pending"}
+            </p>
+            <p className="text-sm text-slate-700 leading-snug whitespace-pre-wrap">
+              {rescue.bio || (isTeamMember ? <span className="italic text-slate-400">Add a bio to tell the community about your mission...</span> : "")}
             </p>
             
-            <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs font-bold text-cyan-700">
-              {rescue.website && (
-                <a href={rescue.website} target="_blank" rel="noreferrer" className="flex items-center gap-1 hover:underline">
-                  <Globe size={14} /> Website
-                </a>
-              )}
-              {rescue.email && (
-                <a href={`mailto:${rescue.email}`} className="flex items-center gap-1 hover:underline">
-                  <Mail size={14} /> Email
-                </a>
-              )}
-              {rescuePhone && (
-                <a href={`tel:${rescuePhone}`} className="flex items-center gap-1 hover:underline">
-                  <Phone size={14} /> Call
-                </a>
-              )}
+            {/* Social/Contact Links */}
+            <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-[11px] font-bold text-cyan-700">
+              {rescue.website && <a href={rescue.website} className="flex items-center gap-1 hover:underline"><LinkIcon size={12} /> Website</a>}
+              {rescue.phone && <a href={`tel:${rescue.phone}`} className="flex items-center gap-1 hover:underline"><Phone size={12} /> Contact</a>}
+              {rescue.social_links?.instagram && <a href={`https://instagram.com/${rescue.social_links.instagram.replace('@', '')}`} className="flex items-center gap-1 hover:underline">Instagram</a>}
+              {rescue.social_links?.twitter && <a href={`https://twitter.com/${rescue.social_links.twitter.replace('@', '')}`} className="flex items-center gap-1 hover:underline">Twitter / X</a>}
             </div>
           </div>
 
-          <div className="flex gap-2">
-            {isOwner ? (
+          {/* Capacity Progress Bar */}
+          <div className="bg-slate-50 rounded-xl p-3 mb-4 border border-slate-100">
+            <div className="flex justify-between text-xs font-bold mb-1.5">
+              <span className="text-slate-600 flex items-center gap-1"><Activity size={14} /> Org Capacity</span>
+              <span className={isStressed ? 'text-rose-600' : 'text-slate-600'}>
+                {capacity.current} / {capacity.max} {isStressed && '(Critical)'}
+              </span>
+            </div>
+            <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden">
+              <div 
+                className={`h-full rounded-full ${isStressed ? 'bg-rose-500' : 'bg-emerald-500'}`} 
+                style={{ width: `${capacityPercentage}%` }}
+              ></div>
+            </div>
+          </div>
+
+          {/* ACTION BAR (Uses isTeamMember flag to determine layout) */}
+          <div className="flex items-center gap-2 mb-2">
+            {isTeamMember ? (
               <>
-                <button onClick={() => navigate('/profile')} className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl transition-colors flex items-center justify-center gap-2 border border-slate-200">
-                  <Edit2 size={16} /> Edit Profile
+                <button onClick={() => navigate('/settings')} className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold py-2 rounded-lg text-sm transition-colors border border-slate-200">
+                  Manage Workspace
                 </button>
-                {/* --- HOOKED UP ADD RESCUE BUTTON --- */}
-                <button onClick={() => setIsAddingAnimal(true)} className="flex-[2] bg-slate-900 hover:bg-black text-white font-bold py-2.5 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-md">
-                  <PlusCircle size={18} /> Add Rescue
+                <button onClick={() => setIsAddingAnimal(true)} className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-lg text-sm transition-colors shadow-sm">
+                  Add Animal
                 </button>
               </>
             ) : (
               <>
-                <FollowButton rescueId={rescue.id} session={session} className="flex-1" />
-                <button className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl transition-colors flex items-center justify-center gap-2 border border-slate-200">
-                  <MessageSquare size={16} /> Message
+                <div className="flex-[2]"><FollowButton rescueId={rescue.id} session={session} className="w-full py-2 rounded-lg text-sm" /></div>
+                <button className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold py-2 rounded-lg text-sm transition-colors border border-slate-200 flex items-center justify-center gap-1">
+                  Message
+                </button>
+                <button className="flex-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold py-2 rounded-lg text-sm transition-colors border border-emerald-200 flex items-center justify-center gap-1">
+                  <HeartHandshake size={16} /> Donate
                 </button>
               </>
             )}
-            <ShareButton url={shareUrl} title={shareTitle} text={shareText} variant="outline" className="px-3" />
+            <button onClick={handleShare} className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors border border-slate-200">
+              <Share2 size={18} />
+            </button>
           </div>
-
         </div>
       </div>
 
-      <div className="max-w-2xl mx-auto mt-2">
+      {/* --- TABS --- */}
+      <div className="sticky top-16 z-30 bg-white border-b border-slate-200 flex justify-around px-4 shadow-sm">
+        <button 
+          onClick={() => setActiveTab('feed')} 
+          className={`py-3 flex-1 text-center text-sm font-black uppercase tracking-wider border-b-2 transition-colors ${activeTab === 'feed' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+        >
+          Feed
+        </button>
+        <button 
+          onClick={() => setActiveTab('accountability')} 
+          className={`py-3 flex-1 text-center text-sm font-black uppercase tracking-wider border-b-2 transition-colors ${activeTab === 'accountability' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+        >
+          Stats
+        </button>
+        <button 
+          onClick={() => setActiveTab('reviews')} 
+          className={`py-3 flex-1 text-center text-sm font-black uppercase tracking-wider border-b-2 transition-colors ${activeTab === 'reviews' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+        >
+          Reviews
+        </button>
+      </div>
+
+      {/* --- CONTENT AREA --- */}
+      <div className="max-w-2xl mx-auto">
         
-        <div className="flex items-center justify-center border-b border-slate-200 mb-1">
-          <div className="border-b-2 border-slate-900 px-6 py-3 text-sm font-black text-slate-900 tracking-wider uppercase">
-            Our Animals
-          </div>
-        </div>
-
-        {animals.length === 0 ? (
-          <div className="p-8 text-center flex flex-col items-center justify-center min-h-[40vh]">
-            <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-4">
-              <ImageIcon size={32} className="text-slate-300" />
+        {/* FEED TAB */}
+        {activeTab === 'feed' && (
+          <div>
+            <div className="flex justify-end p-2 gap-2 border-b border-slate-100 bg-white">
+              <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded ${viewMode === 'grid' ? 'bg-slate-100 text-slate-900' : 'text-slate-400'}`}><Grid size={20}/></button>
+              <button onClick={() => setViewMode('list')} className={`p-1.5 rounded ${viewMode === 'list' ? 'bg-slate-100 text-slate-900' : 'text-slate-400'}`}><List size={20}/></button>
             </div>
-            {isOwner ? (
-              <>
-                <h3 className="text-lg font-black text-slate-800 mb-2">Let's build your network</h3>
-                <p className="text-sm text-slate-500 max-w-xs mx-auto mb-6">
-                  Add the animals currently in your care to start accepting foster applications and Care Fund donations.
-                </p>
-                <button onClick={() => setIsAddingAnimal(true)} className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold px-6 py-3 rounded-xl shadow-sm transition-colors flex items-center gap-2">
-                  <PlusCircle size={18} /> Add Your First Rescue
-                </button>
-              </>
-            ) : (
-              <p className="text-sm font-bold text-slate-400">No animals posted yet.</p>
-            )}
-          </div>
-        ) : (
-          <div className="grid grid-cols-3 gap-1 px-1">
-            {animals.map((animal) => {
-              const latestSighting = animal.sightings?.[0] || {};
-              const displayImage = latestSighting.image_urls?.[0] || latestSighting.image_url;
 
-              return (
-                <Link key={animal.id} to={`/animal/${animal.id}`} className="aspect-square bg-slate-200 relative group overflow-hidden">
-                  {displayImage ? (
-                    <img src={displayImage} alt={animal.name || 'Rescue'} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                  ) : (
-                    <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 bg-slate-100 p-2 text-center">
-                      <ImageIcon size={24} className="mb-1 opacity-50" />
-                      <span className="text-[10px] font-bold truncate w-full">{animal.name || 'No Photo'}</span>
+            {animals.length === 0 ? (
+              <div className="p-12 text-center text-slate-400 font-bold">No posts or animals yet.</div>
+            ) : (
+              <div className={viewMode === 'grid' ? 'grid grid-cols-3 gap-0.5' : 'flex flex-col gap-4 p-4'}>
+                {animals.map((animal, idx) => {
+                  const latestSighting = animal.sightings?.[0] || {};
+                  const displayImage = latestSighting.image_urls?.[0] || latestSighting.image_url;
+                  const isPinned = idx === 0;
+
+                  if (viewMode === 'grid') {
+                    return (
+                      <Link key={animal.id} to={`/animal/${animal.id}`} className="aspect-square bg-slate-200 relative group overflow-hidden">
+                        {displayImage && <img src={displayImage} className="w-full h-full object-cover" />}
+                        {isPinned && <Pin size={16} className="absolute top-2 right-2 text-white drop-shadow-md" fill="white" />}
+                      </Link>
+                    );
+                  }
+
+                  return (
+                    <div key={animal.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                      <div className="p-3 flex items-center justify-between border-b border-slate-50">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-full bg-indigo-50 text-indigo-300 flex items-center justify-center overflow-hidden">
+                             {rescue.avatar_url ? <img src={rescue.avatar_url} className="w-full h-full object-cover" /> : <Building size={16} />}
+                          </div>
+                          <span className="font-bold text-sm text-slate-900">{rescue.name}</span>
+                        </div>
+                        {isPinned && <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1"><Pin size={12}/> Pinned</span>}
+                      </div>
+                      
+                      {displayImage && (
+                        <Link to={`/animal/${animal.id}`}>
+                          <img src={displayImage} className="w-full h-auto max-h-96 object-cover" />
+                        </Link>
+                      )}
+                      
+                      <div className="p-4">
+                        <div className="flex justify-between items-start mb-2">
+                          <h3 className="font-black text-lg text-slate-800">{animal.name || "Available for Foster"}</h3>
+                          <button className="bg-cyan-50 text-cyan-700 px-3 py-1 rounded-full text-xs font-bold border border-cyan-100">
+                            Donate to Care Fund
+                          </button>
+                        </div>
+                        <p className="text-sm text-slate-600 line-clamp-3">{animal.notes}</p>
+                      </div>
                     </div>
-                  )}
-                  
-                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white p-2 text-center">
-                    <span className="font-black text-sm truncate w-full">{animal.name}</span>
-                    <span className="text-[10px] font-bold uppercase tracking-widest mt-1 bg-white/20 px-2 py-0.5 rounded-full">
-                      {animal.status}
-                    </span>
-                  </div>
-                </Link>
-              );
-            })}
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
+
+        {/* ACCOUNTABILITY / STATS TAB (Placeholder Layout) */}
+        {activeTab === 'accountability' && (
+          <div className="p-6">
+            <h3 className="font-black text-slate-800 mb-4 flex items-center gap-2"><DollarSign size={20} className="text-emerald-500"/> Financial Accountability</h3>
+            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm text-center">
+              <p className="text-slate-500 text-sm mb-4">Transparent tracking of Care Funds and direct donations.</p>
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div className="bg-slate-50 p-4 rounded-lg">
+                  <p className="text-2xl font-black text-slate-900">$4,250</p>
+                  <p className="text-[10px] uppercase font-bold text-slate-400">Raised YTD</p>
+                </div>
+                <div className="bg-slate-50 p-4 rounded-lg">
+                  <p className="text-2xl font-black text-slate-900">42</p>
+                  <p className="text-[10px] uppercase font-bold text-slate-400">Animals Assisted</p>
+                </div>
+              </div>
+              <button className="text-cyan-600 font-bold text-sm hover:underline">View Public Ledger & Receipts</button>
+            </div>
+          </div>
+        )}
+
+        {/* REVIEWS TAB (Placeholder Layout) */}
+        {activeTab === 'reviews' && (
+          <div className="p-6">
+            <h3 className="font-black text-slate-800 mb-4 flex items-center gap-2"><Star size={20} className="text-amber-500"/> Community Reviews</h3>
+            <div className="space-y-4">
+              <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+                <div className="flex text-amber-400 mb-2"><Star size={14} fill="currentColor"/><Star size={14} fill="currentColor"/><Star size={14} fill="currentColor"/><Star size={14} fill="currentColor"/><Star size={14} fill="currentColor"/></div>
+                <p className="text-sm text-slate-700 italic mb-2">"Amazing experience fostering with them. They provided all medical care and food upfront."</p>
+                <p className="text-xs font-bold text-slate-400">— Verified Foster, Oct 2026</p>
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
 
-      {/* --- INJECTED MODAL --- */}
       <ReportModal isOpen={isAddingAnimal} onClose={() => setIsAddingAnimal(false)} reportType="Rescue Intake" />
     </div>
   );

@@ -31,9 +31,10 @@ export default function App() {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   
   const [pendingReportType, setPendingReportType] = useState(null);
+  const [userRescueId, setUserRescueId] = useState(null);
 
   useEffect(() => {
-    const handleSession = (currentSession) => {
+  const handleSession = async (currentSession) => {
       setSession(currentSession);
       
       if (currentSession) {
@@ -46,6 +47,19 @@ export default function App() {
           setIsAuthModalOpen(false);
           setPendingReportType(null);
         }
+
+        // NEW: Fetch their workspace ID if they belong to a rescue team
+        const { data: teamData } = await supabase
+          .from('rescue_team_members')
+          .select('rescue_id')
+          .eq('user_id', currentSession.user.id)
+          .maybeSingle();
+          
+        if (teamData) {
+          setUserRescueId(teamData.rescue_id);
+        }
+      } else {
+        setUserRescueId(null);
       }
     };
 
@@ -87,7 +101,7 @@ export default function App() {
   const userFullName = [userMetadata.first_name, userMetadata.last_name].filter(Boolean).join(' ') || userMetadata.full_name || userMetadata.name || 'User';
   
   // NEW: Determine route for their public profile
-  const publicProfileRoute = userMetadata.account_type === 'Rescue' ? `/rescue/${session?.user?.id}` : `/profile`;
+  const publicProfileRoute = userRescueId ? `/rescue/${userRescueId}` : `/profile`;
 
   return (
     <div className="max-w-md mx-auto bg-cyan-600 min-h-screen relative font-sans text-slate-900 shadow-2xl flex flex-col">
