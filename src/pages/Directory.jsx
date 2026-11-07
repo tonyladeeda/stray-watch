@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, ShieldCheck, Heart, ChevronRight, Phone, Mail, Clock } from 'lucide-react';
+import { Search, ShieldCheck, Heart, ChevronRight, Phone, Mail, Clock, Car, User } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 
 export default function Directory() {
@@ -17,14 +17,13 @@ export default function Directory() {
   const fetchDirectory = async () => {
     setLoading(true);
     
-    // Check if user is a verified rescue to show the Foster tab
     const { data: { session } } = await supabase.auth.getSession();
     if (session) {
       const { data: rescueData } = await supabase
         .from('rescue_partners')
         .select('is_verified')
         .eq('user_id', session.user.id)
-        .single();
+        .maybeSingle();
         
       if (rescueData?.is_verified) {
         setIsVerifiedRescue(true);
@@ -43,22 +42,28 @@ export default function Directory() {
   };
 
   const filteredData = directoryData.filter(item => {
-    const tabMatch = activeTab === 'All' || item.type + 's' === activeTab;
-    const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase());
+    // NEW: Filter based on capability toggles instead of legacy types
+    let tabMatch = false;
+    if (activeTab === 'All') tabMatch = true;
+    else if (activeTab === 'Rescues') tabMatch = item.type === 'Rescue';
+    else if (activeTab === 'Fosters') tabMatch = item.open_to_foster === true;
+    else if (activeTab === 'Volunteers') tabMatch = item.open_to_volunteer === true;
+
+    const matchesSearch = item.name?.toLowerCase().includes(searchQuery.toLowerCase());
     return tabMatch && matchesSearch;
   });
 
-  const CATEGORIES = isVerifiedRescue ? ['All', 'Rescues', 'Fosters'] : ['Rescues'];
+  const CATEGORIES = isVerifiedRescue ? ['All', 'Rescues', 'Fosters', 'Volunteers'] : ['Rescues'];
 
   return (
     <div className="bg-slate-50 min-h-screen pb-24 font-sans text-slate-900">
-      <div className="bg-white p-4 border-b border-slate-200 sticky top-[72px] z-10 shadow-sm space-y-3">
+      <div className="bg-white p-4 border-b border-slate-200 sticky top-[64px] z-10 shadow-sm space-y-3">
         <h1 className="text-xl font-black text-slate-800 tracking-tight">Community Directory</h1>
         
         <div className="relative">
           <input 
             type="text" 
-            placeholder="Search organizations or fosters..."
+            placeholder="Search organizations or community members..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-slate-100 border border-slate-200 p-2.5 pl-9 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-600"
@@ -94,15 +99,36 @@ export default function Directory() {
               className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:border-blue-300 transition-colors flex items-center justify-between group relative overflow-hidden"
             >
               <div className="min-w-0 pr-4">
-                <div className="flex items-center gap-2 mb-1">
-                  {item.type === 'Rescue' ? <ShieldCheck size={16} className="text-blue-600" /> : <Heart size={16} className="text-rose-600" />}
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{item.type}</span>
-                  {!item.is_approved && (
-                    <span className="text-[9px] font-black uppercase tracking-wider text-amber-700 bg-amber-100 px-2 py-0.5 rounded flex items-center gap-1">
+                
+                {/* NEW: Dynamic Capability Badges */}
+                <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                  {item.type === 'Rescue' && (
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-2 py-0.5 rounded flex items-center gap-1">
+                      <ShieldCheck size={12} /> Rescue
+                    </span>
+                  )}
+                  {item.open_to_foster && (
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-rose-600 bg-rose-50 px-2 py-0.5 rounded flex items-center gap-1">
+                      <Heart size={12} /> Foster
+                    </span>
+                  )}
+                  {item.open_to_volunteer && (
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 bg-amber-50 px-2 py-0.5 rounded flex items-center gap-1">
+                      <Car size={12} /> Volunteer
+                    </span>
+                  )}
+                  {item.type === 'Community' && !item.open_to_foster && !item.open_to_volunteer && (
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-100 px-2 py-0.5 rounded flex items-center gap-1">
+                      <User size={12} /> Community
+                    </span>
+                  )}
+                  {!item.is_approved && item.type === 'Rescue' && (
+                    <span className="text-[9px] font-black uppercase tracking-wider text-slate-500 bg-slate-100 px-2 py-0.5 rounded flex items-center gap-1">
                       <Clock size={10} /> Pending
                     </span>
                   )}
                 </div>
+
                 <h2 className="font-bold text-slate-800 text-sm truncate">{item.name}</h2>
                 <div className="flex items-center gap-3 mt-2 text-xs text-slate-500 font-medium">
                   {item.phone && <span className="flex items-center gap-1"><Phone size={12}/> {item.phone}</span>}

@@ -3,12 +3,13 @@ import { Routes, Route, Link, useNavigate } from 'react-router-dom';
 import AuthModal from './components/AuthModal';
 import { 
   Camera, Plus, Clock, X, Shield, PawPrint, 
-  Bell, Settings as SettingsIcon, Bug, FileText, LogOut, Edit2, User
+  Bell, Settings as SettingsIcon, Bug, FileText, LogOut, Edit2, User, Building
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import Auth from './Auth';
 import Feed from './pages/Feed';
 import Directory from './pages/Directory';
+import DirectoryProfile from './pages/DirectoryProfile';
 import AnimalProfile from './pages/AnimalProfile';
 import ProfileSettings from './pages/ProfileSettings';
 import Dashboard from './pages/Dashboard';
@@ -32,6 +33,7 @@ export default function App() {
   
   const [pendingReportType, setPendingReportType] = useState(null);
   const [userRescueId, setUserRescueId] = useState(null);
+  const [avatarError, setAvatarError] = useState(false);
 
   useEffect(() => {
   const handleSession = async (currentSession) => {
@@ -48,7 +50,6 @@ export default function App() {
           setPendingReportType(null);
         }
 
-        // NEW: Fetch their workspace ID if they belong to a rescue team
         const { data: teamData } = await supabase
           .from('rescue_team_members')
           .select('rescue_id')
@@ -100,7 +101,6 @@ export default function App() {
   const userInitial = userMetadata.first_name?.[0] || userMetadata.full_name?.[0] || session?.user?.email?.[0] || 'U';
   const userFullName = [userMetadata.first_name, userMetadata.last_name].filter(Boolean).join(' ') || userMetadata.full_name || userMetadata.name || 'User';
   
-  // NEW: Determine route for their public profile
   const publicProfileRoute = userRescueId ? `/rescue/${userRescueId}` : `/profile`;
 
   return (
@@ -121,6 +121,7 @@ export default function App() {
             <span className="hidden sm:inline-block bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded shadow-sm">
               Beta V1.0
             </span>
+            
             <button className="text-slate-400 hover:text-slate-700 transition-colors relative">
               <Bell size={20} />
             </button>
@@ -129,8 +130,13 @@ export default function App() {
                 onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
                 className="rounded-full flex items-center justify-center transition-transform hover:scale-105 focus:ring-2 focus:ring-cyan-300 outline-none"
               >
-                {avatarUrl ? (
-                  <img src={avatarUrl} alt="Profile" className="w-9 h-9 rounded-full object-cover border-2 border-cyan-500 shadow-sm bg-slate-100" />
+                {avatarUrl && !avatarError ? (
+                  <img 
+                    src={avatarUrl} 
+                    alt="Profile" 
+                    onError={() => setAvatarError(true)}
+                    className="w-9 h-9 rounded-full object-cover border-2 border-cyan-500 shadow-sm bg-slate-100" 
+                  />
                 ) : (
                   <div className="w-9 h-9 rounded-full bg-cyan-50 border-2 border-cyan-500 flex items-center justify-center text-cyan-700 font-bold shadow-sm">
                     {userInitial.toUpperCase()}
@@ -153,7 +159,12 @@ export default function App() {
                     </div>
                     
                     <div className="p-2 space-y-1">
-                      {/* --- INJECTED PUBLIC PROFILE LINK --- */}
+                      {/* MOVED: Rescue Workspace Button */}
+                      {userRescueId && (
+                        <Link to="/rescue-dashboard" onClick={() => setIsProfileMenuOpen(false)} className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-black text-sm transition-colors mb-1">
+                          <Building size={18} className="text-indigo-500" /> Rescue Workspace
+                        </Link>
+                      )}
                       <Link to={publicProfileRoute} onClick={() => setIsProfileMenuOpen(false)} className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 text-slate-700 font-bold text-sm transition-colors">
                         <User size={18} className="text-slate-400" /> View Public Profile
                       </Link>
@@ -186,12 +197,13 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Feed />} />
           <Route path="/directory" element={<Directory />} />
+          <Route path="/directory/:id" element={<DirectoryProfile />} />
           <Route path="/animal/:id" element={<AnimalProfile />} />
           <Route path="/profile" element={<ProfileSettings />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/admin" element={<AdminPortal />} /> 
           <Route path="/rescue/:id?" element={<RescueProfile />} />
-          <Route path="/rescue-workspace" element={<RescueDashboard />} />
+          <Route path="/rescue-dashboard" element={<RescueDashboard />} />
           <Route path="/foster-application" element={<FosterApplication />} />
           <Route path="/foster-profile-setup" element={<MasterProfileWizard />} />
         </Routes>

@@ -5,11 +5,12 @@ import {
   ArrowLeft, Edit2, Check, X, MapPin, AlertTriangle, 
   ShieldAlert, Phone, Navigation, Globe, Clock, Mail, 
   ArrowRightLeft, Hand, Archive, Image as ImageIcon, Heart, 
-  FileText, Upload, PlusCircle, Settings, Home, CreditCard
+  FileText, Upload, PlusCircle, Settings, Home, CreditCard, ShieldCheck, Activity, Calendar
 } from 'lucide-react';
 import CommentSection from '../components/CommentSection';
 import FollowButton from '../components/FollowButton';
-import ShareButton from '../components/ShareButton'; // NEW IMPORT
+import ShareButton from '../components/ShareButton';
+import DonationPanel from '../components/DonationPanel'; // NEW
 import { SHELTER_DIRECTORY } from '../shelterData';
 
 const STATUS_OPTIONS = ['Spotted', 'Rescued', 'In-care', 'Fostered', 'Adopted', 'Deceased', 'Euthanized'];
@@ -19,6 +20,7 @@ export default function AnimalProfile() {
   const navigate = useNavigate();
   const [animal, setAnimal] = useState(null);
   const [sightings, setSightings] = useState([]);
+  const [rescue, setRescue] = useState(null); // Added for handler info
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState(null);
   const [isVerifiedRescue, setIsVerifiedRescue] = useState(false);
@@ -37,11 +39,6 @@ export default function AnimalProfile() {
   const [isReportingAbuse, setIsReportingAbuse] = useState(false);
   const [abuseForm, setAbuseForm] = useState({ category: 'Abuse/Neglect', details: '', agreed: false });
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
-
-  // Checkout State (Public)
-  const [isDonateModalOpen, setIsDonateModalOpen] = useState(false);
-  const [donationAmount, setDonationAmount] = useState(50);
-  const [tipPercentage, setTipPercentage] = useState(5);
 
   // Care Fund Management State (Rescue Only)
   const [isManagingFund, setIsManagingFund] = useState(false);
@@ -72,6 +69,16 @@ export default function AnimalProfile() {
         amount: animalData.funding_goal || '',
         description: animalData.funding_description || ''
       });
+
+      // Fetch Handler's Rescue Info
+      if (animalData.handler_id) {
+        const { data: handlerRescue } = await supabase
+          .from('rescue_partners')
+          .select('*')
+          .eq('user_id', animalData.handler_id)
+          .maybeSingle();
+        if (handlerRescue) setRescue(handlerRescue);
+      }
     }
 
     if (currentSession?.user?.id) {
@@ -79,7 +86,7 @@ export default function AnimalProfile() {
         .from('rescue_partners')
         .select('is_verified')
         .eq('user_id', currentSession.user.id)
-        .single();
+        .maybeSingle();
         
       if (rescueData?.is_verified) setIsVerifiedRescue(true);
     }
@@ -172,7 +179,10 @@ export default function AnimalProfile() {
     setIsUpdating(true);
     const updatePayload = { handler_id: session.user.id, handler_email: session.user.email };
     const { error } = await supabase.from('animals').update(updatePayload).eq('id', id);
-    if (!error) setAnimal({ ...animal, ...updatePayload });
+    if (!error) {
+        setAnimal({ ...animal, ...updatePayload });
+        fetchAnimalData({ user: session.user }); // Refresh to get Rescue object if applicable
+    }
     setIsUpdating(false);
   };
 
@@ -180,7 +190,7 @@ export default function AnimalProfile() {
     if (!transferEmail.trim()) return;
     setIsUpdating(true);
     const { error } = await supabase.from('animals').update({ handler_email: transferEmail, handler_id: null }).eq('id', id);
-    if (!error) { setAnimal({ ...animal, handler_email: transferEmail, handler_id: null }); setIsTransferring(false); setTransferEmail(''); }
+    if (!error) { setAnimal({ ...animal, handler_email: transferEmail, handler_id: null }); setIsTransferring(false); setTransferEmail(''); setRescue(null); }
     setIsUpdating(false);
   };
 
@@ -192,11 +202,6 @@ export default function AnimalProfile() {
     const { error } = await supabase.from('abuse_reports').insert([{ animal_id: id, user_id: session.user.id, category: abuseForm.category, details: abuseForm.details, agreed_to_terms: abuseForm.agreed }]);
     if (!error) { setAbuseReportsCount(prev => prev + 1); setIsReportingAbuse(false); setAbuseForm({ category: 'Abuse/Neglect', details: '', agreed: false }); alert('Report submitted successfully.'); }
     setIsSubmittingReport(false);
-  };
-
-  const handleSimulateDonation = () => {
-    alert(`In the next phase, this will open Stripe Checkout to process $${totalCharge.toFixed(2)} securely!`);
-    setIsDonateModalOpen(false);
   };
 
   if (loading) return <div className="p-4 text-center mt-10 font-bold text-slate-500">Loading profile...</div>;
@@ -216,8 +221,6 @@ export default function AnimalProfile() {
   }, []);
 
   const percentFunded = animal.funding_goal > 0 ? Math.min(100, Math.round((animal.funds_raised / animal.funding_goal) * 100)) : 0;
-  const calculatedTip = parseFloat((donationAmount * (tipPercentage / 100)).toFixed(2));
-  const totalCharge = parseFloat((donationAmount + calculatedTip).toFixed(2));
 
   const detailsConfig = [
     { key: 'type', label: 'Species', inputType: 'select', options: ['Dog', 'Cat', 'Other'] },
@@ -229,7 +232,6 @@ export default function AnimalProfile() {
     { key: 'physical_traits', label: 'Physical Traits & Scars', inputType: 'text' }
   ];
 
-  // SHARING PAYLOAD PREPARATION
   const shareUrl = `${window.location.origin}/animal/${animal.id}`;
   const shareTitle = `${isUrgent ? 'URGENT: ' : ''}${displayName} - StrayGuard`;
   const shareText = isUrgent 
@@ -238,9 +240,9 @@ export default function AnimalProfile() {
 
   return (
     <div className="pb-6">
-      <div className="bg-white p-3 border-b border-slate-200 sticky top-[72px] z-10 flex items-center gap-3 shadow-sm">
+      <div className="bg-white p-3 border-b border-slate-200 sticky top-[64px] z-30 flex items-center gap-3 shadow-sm">
         <button onClick={() => navigate(-1)} className="p-2 bg-slate-100 rounded-full text-slate-600 hover:bg-slate-200 transition-colors"><ArrowLeft size={20} /></button>
-        <h2 className="font-bold text-slate-800 text-lg flex-grow">Animal Profile</h2>
+        <h2 className="font-bold text-slate-800 text-lg flex-grow truncate">Animal Profile</h2>
         {!isEditing ? (
           <button onClick={() => setIsEditing(true)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-full transition-colors font-bold text-sm flex items-center gap-1"><Edit2 size={16} /> Edit</button>
         ) : (
@@ -265,14 +267,15 @@ export default function AnimalProfile() {
         </div>
       )}
 
-      <div className="p-4 space-y-4">
+      <div className="p-4 space-y-4 max-w-md mx-auto">
         {isCurrentHandler && isVerifiedRescue && (
-          <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-xl flex items-center gap-2 text-emerald-800 text-sm">
-            <ShieldAlert size={18} className="text-emerald-600" />
+          <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-xl flex items-center gap-2 text-emerald-800 text-sm shadow-sm">
+            <ShieldAlert size={18} className="text-emerald-600 shrink-0" />
             <span>You are managing this post as a <strong>Verified Rescue Partner</strong>.</span>
           </div>
         )}
 
+        {/* --- MAIN HEADER INFO --- */}
         <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
           <div className="flex justify-between items-start mb-3">
             <div className="flex-grow pr-2">
@@ -280,7 +283,6 @@ export default function AnimalProfile() {
                 <input type="text" value={editForm.name || ''} onChange={(e) => setEditForm({...editForm, name: e.target.value})} placeholder="Name (e.g. Buddy)" className="w-full text-2xl font-black text-slate-800 border-b border-slate-300 outline-none focus:border-blue-600 mb-3 bg-slate-50 p-1 rounded" />
               ) : <h1 className="text-2xl font-black text-slate-800 mb-3">{displayName}</h1>}
             </div>
-            {/* INJECTED SHARE BUTTON NEXT TO FOLLOW BUTTON */}
             <div className="flex items-center gap-2 shrink-0">
               <ShareButton 
                 url={shareUrl} 
@@ -295,18 +297,126 @@ export default function AnimalProfile() {
           <div className="flex items-center">
             {session ? (
               <div className="relative inline-block">
-                <select value={animal.status} onChange={handleStatusChange} disabled={isUpdating} className="appearance-none bg-amber-100 text-amber-700 font-bold rounded-full pl-3 pr-8 py-1 text-sm outline-none border border-amber-200 cursor-pointer">
+                <select value={animal.status} onChange={handleStatusChange} disabled={isUpdating} className="appearance-none bg-amber-100 text-amber-700 font-bold rounded-full pl-3 pr-8 py-1 text-sm outline-none border border-amber-200 cursor-pointer shadow-sm">
                   {STATUS_OPTIONS.map(status => <option key={status} value={status}>{status}</option>)}
                 </select>
                 <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-amber-700"><svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg></div>
               </div>
-            ) : <span className="inline-block mt-2 px-3 py-1 bg-amber-100 text-amber-700 font-bold rounded-full text-sm">{animal.status}</span>}
+            ) : <span className="inline-block mt-2 px-3 py-1 bg-amber-100 text-amber-700 font-bold rounded-full text-sm shadow-sm">{animal.status}</span>}
           </div>
         </div>
 
+        {/* --- HANDLER & RESCUE DETAILS --- */}
+        {rescue && (
+          <Link to={`/rescue/${rescue.user_id}`} className="block bg-blue-50 rounded-2xl p-4 border border-blue-100 shadow-sm hover:bg-blue-100 transition-colors group">
+            <p className="text-[10px] font-bold text-blue-500 uppercase tracking-wider mb-2 flex items-center gap-1">
+              <ShieldCheck size={12}/> Handled By
+            </p>
+            <div className="flex items-center gap-3">
+              {rescue.avatar_url ? (
+                <img src={rescue.avatar_url} className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm" alt={rescue.name} />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-white border border-blue-200 flex items-center justify-center shadow-sm">
+                  <ShieldCheck size={20} className="text-blue-400" />
+                </div>
+              )}
+              <div>
+                <p className="font-bold text-blue-900 group-hover:text-blue-700 transition-colors">{rescue.name}</p>
+                {rescue.is_verified && <p className="text-xs text-blue-600 font-medium">Verified 501(c)(3) Rescue</p>}
+              </div>
+            </div>
+          </Link>
+        )}
+
+        {/* --- PLACEMENT CTAs (Public) --- */}
+        {!isCurrentHandler && (animal.available_for_foster || animal.available_for_adoption) && (
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
+            <h3 className="font-bold text-slate-800 text-sm mb-2 border-b border-slate-100 pb-2">Placement Opportunities</h3>
+            {animal.available_for_foster && (
+              <Link to={`/foster-application?animal=${encodeURIComponent(animal.name || id)}`} className="w-full bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100 transition-colors font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 text-sm">
+                <Heart size={18} /> Apply to Foster
+              </Link>
+            )}
+            {animal.available_for_adoption && (
+              <button onClick={() => alert("Adoption flow goes here")} className="w-full bg-purple-50 border border-purple-200 text-purple-700 hover:bg-purple-100 transition-colors font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 text-sm">
+                <Home size={18} /> Apply to Adopt
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* --- CARE FUND PUBLIC DISPLAY & DONATION PANEL --- */}
+        {(animal.funding_goal > 0 || (isCurrentHandler && isVerifiedRescue)) && (
+          <div className="bg-white rounded-xl shadow-sm border border-emerald-100 p-4">
+            {animal.funding_goal > 0 && (
+              <>
+                <div className="flex justify-between items-end mb-2">
+                  <div>
+                    <h3 className="font-black text-slate-800 tracking-tight flex items-center gap-1.5">
+                      <Heart size={16} className="text-emerald-500 fill-emerald-500" /> Care Fund
+                    </h3>
+                    <p className="text-xs font-medium text-slate-500 mt-1">
+                      <span className="text-emerald-700 font-bold">${animal.funds_raised}</span> raised of${animal.funding_goal}
+                    </p>
+                  </div>
+                  <span className="text-sm font-black text-emerald-600">{percentFunded}%</span>
+                </div>
+                <div className="w-full bg-slate-100 rounded-full h-3 mb-4 overflow-hidden border border-slate-200">
+                  <div className="bg-emerald-500 h-3 rounded-full transition-all" style={{ width: `${percentFunded}%` }}></div>
+                </div>
+                {animal.funding_description && (
+                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 mb-4">
+                    <p className="text-sm text-slate-700 whitespace-pre-wrap">{animal.funding_description}</p>
+                  </div>
+                )}
+                {animal.funding_receipt_urls?.length > 0 && (
+                  <div className="mb-4">
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1"><FileText size={14} /> Documents</p>
+                    <div className="flex gap-2 overflow-x-auto pb-2">
+                      {animal.funding_receipt_urls.map((url, i) => (
+                        <a key={i} href={url} target="_blank" rel="noreferrer" className="shrink-0 border border-slate-200 rounded-lg hover:border-emerald-500">
+                          <img src={url} className="h-20 w-20 object-cover" alt="Receipt" />
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Injected the new Generic Donation Panel */}
+            {rescue && (
+              <div className="mt-4">
+                <DonationPanel 
+                  type="animal" 
+                  targetName={displayName} 
+                  isVerified={rescue.is_verified} 
+                />
+              </div>
+            )}
+
+            {isCurrentHandler && isVerifiedRescue && (
+              <button onClick={() => setIsManagingFund(true)} className="w-full mt-4 bg-slate-100 text-slate-700 font-bold py-2.5 rounded-xl border border-slate-200 flex items-center justify-center gap-2 text-sm hover:bg-slate-200 transition-colors">
+                <Edit2 size={16} /> Manage Care Fund Ask
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* --- URGENT SHELTER INFO --- */}
+        {isUrgent && (
+          <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 shadow-sm">
+            <h3 className="text-rose-800 font-black text-sm uppercase tracking-wider flex items-center gap-1.5 mb-3"><AlertTriangle size={16} /> Urgent Shelter Case</h3>
+            <div className="grid grid-cols-2 gap-3 text-sm mb-4">
+              <div><span className="text-rose-600/70 text-xs font-bold block">Shelter ID</span><span className="font-mono font-bold text-rose-900 bg-white px-2 py-1 rounded inline-block shadow-sm">{animal.shelter_id}</span></div>
+              <div><span className="text-rose-600/70 text-xs font-bold block">Deadline</span><span className="font-bold text-rose-900 flex items-center gap-1"><Clock size={14} />{animal.urgent_deadline ? new Date(animal.urgent_deadline).toLocaleDateString() : 'Unknown'}</span></div>
+            </div>
+          </div>
+        )}
+
         {/* --- HANDLER CONTROLS --- */}
         {isCurrentHandler && (
-          <div className="bg-slate-800 rounded-2xl p-5 shadow-sm text-white">
+          <div className="bg-slate-800 rounded-2xl p-5 shadow-sm text-white mt-6">
             <h3 className="font-bold flex items-center gap-2 border-b border-slate-700 pb-3 mb-4 text-sm">
               <Settings size={16} className="text-slate-400" /> Placement Controls
             </h3>
@@ -335,96 +445,7 @@ export default function AnimalProfile() {
           </div>
         )}
 
-        {/* --- CARE FUND PUBLIC DISPLAY --- */}
-        {(animal.funding_goal > 0 || (isCurrentHandler && isVerifiedRescue)) && (
-          <div className="bg-white rounded-xl shadow-sm border border-emerald-100 p-4">
-            {animal.funding_goal > 0 ? (
-              <>
-                <div className="flex justify-between items-end mb-2">
-                  <div>
-                    <h3 className="font-black text-slate-800 tracking-tight flex items-center gap-1.5">
-                      <Heart size={16} className="text-emerald-500 fill-emerald-500" /> Care Fund
-                    </h3>
-                    <p className="text-xs font-medium text-slate-500 mt-1">
-                      <span className="text-emerald-700 font-bold">${animal.funds_raised}</span> raised of ${animal.funding_goal}
-                    </p>
-                  </div>
-                  <span className="text-sm font-black text-emerald-600">{percentFunded}%</span>
-                </div>
-                <div className="w-full bg-slate-100 rounded-full h-3 mb-4 overflow-hidden border border-slate-200">
-                  <div className="bg-emerald-500 h-3 rounded-full transition-all" style={{ width: `${percentFunded}%` }}></div>
-                </div>
-                {animal.funding_description && (
-                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 mb-4">
-                    <p className="text-sm text-slate-700 whitespace-pre-wrap">{animal.funding_description}</p>
-                  </div>
-                )}
-                {animal.funding_receipt_urls?.length > 0 && (
-                  <div className="mb-4">
-                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1"><FileText size={14} /> Documents</p>
-                    <div className="flex gap-2 overflow-x-auto pb-2">
-                      {animal.funding_receipt_urls.map((url, i) => (
-                        <a key={i} href={url} target="_blank" rel="noreferrer" className="shrink-0 border border-slate-200 rounded-lg hover:border-emerald-500">
-                          <img src={url} className="h-20 w-20 object-cover" alt="Receipt" />
-                        </a>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                <button onClick={() => setIsDonateModalOpen(true)} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl shadow-sm text-sm mb-2">
-                  Support {displayName}
-                </button>
-              </>
-            ) : (
-               <div className="text-center py-2">
-                 <Heart size={24} className="text-slate-300 mx-auto mb-2" />
-                 <p className="text-sm text-slate-500 font-bold">No Care Fund setup yet.</p>
-               </div>
-            )}
-            {isCurrentHandler && isVerifiedRescue && (
-              <button onClick={() => setIsManagingFund(true)} className="w-full mt-2 bg-slate-100 text-slate-700 font-bold py-2.5 rounded-xl border border-slate-200 flex items-center justify-center gap-2 text-sm">
-                <Edit2 size={16} /> Manage Care Fund Ask
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* --- PLACEMENT CTAs (Public) --- */}
-        {!isCurrentHandler && (animal.available_for_foster || animal.available_for_adoption) && (
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
-            <h3 className="font-bold text-slate-800 text-sm mb-2 border-b border-slate-100 pb-2">Placement Opportunities</h3>
-            {animal.available_for_foster && (
-              <Link to={`/foster-application?animal=${encodeURIComponent(animal.name || id)}`} className="w-full bg-blue-50 border border-blue-200 text-blue-700 font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 text-sm">
-                <Heart size={18} /> Apply to Foster
-              </Link>
-            )}
-            {animal.available_for_adoption && (
-              <button onClick={() => alert("Adoption flow goes here")} className="w-full bg-purple-50 border border-purple-200 text-purple-700 font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 text-sm">
-                <Home size={18} /> Apply to Adopt
-              </button>
-            )}
-            {/* Added Share Button to the placement block */}
-            <ShareButton 
-              url={shareUrl} 
-              title={shareTitle} 
-              text={shareText} 
-              className="w-full bg-slate-50 border border-slate-200 text-slate-700 font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 text-sm hover:bg-slate-100 transition-colors"
-            />
-          </div>
-        )}
-
-        {/* --- URGENT SHELTER INFO --- */}
-        {isUrgent && (
-          <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 shadow-sm">
-            <h3 className="text-rose-800 font-black text-sm uppercase tracking-wider flex items-center gap-1.5 mb-3"><AlertTriangle size={16} /> Urgent Shelter Case</h3>
-            <div className="grid grid-cols-2 gap-3 text-sm mb-4">
-              <div><span className="text-rose-600/70 text-xs font-bold block">Shelter ID</span><span className="font-mono font-bold text-rose-900 bg-white px-2 py-1 rounded inline-block">{animal.shelter_id}</span></div>
-              <div><span className="text-rose-600/70 text-xs font-bold block">Deadline</span><span className="font-bold text-rose-900 flex items-center gap-1"><Clock size={14} />{animal.urgent_deadline ? new Date(animal.urgent_deadline).toLocaleDateString() : 'Unknown'}</span></div>
-            </div>
-          </div>
-        )}
-
-        {/* --- HANDLER CARD --- */}
+        {/* --- HANDLER CLAIM CARD --- */}
         <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
           <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Current Handler</p>
           {animal.handler_email ? (
@@ -444,7 +465,7 @@ export default function AnimalProfile() {
                 </div>
               )}
             </div>
-          ) : session ? <button onClick={handleClaim} disabled={isUpdating} className="flex items-center justify-center gap-2 text-sm font-bold text-blue-600 bg-blue-50 px-3 py-2 rounded-lg w-full"><Hand size={16} /> Claim as Handler</button> : <p className="text-sm text-slate-500 italic">No handler assigned yet.</p>}
+          ) : session ? <button onClick={handleClaim} disabled={isUpdating} className="flex items-center justify-center gap-2 text-sm font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 transition-colors px-3 py-2 rounded-lg w-full"><Hand size={16} /> Claim as Handler</button> : <p className="text-sm text-slate-500 italic">No handler assigned yet.</p>}
         </div>
 
         {/* --- ABUSE TRIGGER --- */}
@@ -453,7 +474,7 @@ export default function AnimalProfile() {
             <h3 className={`font-bold flex items-center gap-1.5 ${abuseReportsCount > 0 ? 'text-rose-800' : 'text-slate-800'}`}><ShieldAlert size={18} className={abuseReportsCount > 0 ? 'text-rose-600' : 'text-slate-400'} /> Suspicious Activity</h3>
             <p className={`text-xs mt-1 ${abuseReportsCount > 0 ? 'text-rose-700' : 'text-slate-500'}`}>Reported <strong>{abuseReportsCount}</strong> time(s) for suspected abuse.</p>
           </div>
-          <button onClick={() => setIsReportingAbuse(true)} className="bg-white border border-slate-200 text-slate-700 font-bold py-1.5 px-4 rounded-lg text-sm shrink-0">Report Issue</button>
+          <button onClick={() => setIsReportingAbuse(true)} className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold py-1.5 px-4 rounded-lg text-sm shrink-0 transition-colors">Report Issue</button>
         </div>
 
         {/* --- IDENTITY DETAILS --- */}
@@ -476,13 +497,13 @@ export default function AnimalProfile() {
         <CommentSection animalId={animal.id} />
       </div>
 
-      {/* MODALS */}
+      {/* --- MODALS --- */}
       {isManagingFund && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex justify-center items-end max-w-md mx-auto">
           <div className="bg-white w-full rounded-t-2xl p-5 shadow-2xl h-[85vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-black text-slate-800 flex items-center gap-2"><Edit2 className="text-emerald-600" /> Manage Care Fund</h2>
-              <button onClick={() => {setIsManagingFund(false); setReceiptFiles([]);}} className="bg-slate-100 p-2 rounded-full"><X size={20} /></button>
+              <button onClick={() => {setIsManagingFund(false); setReceiptFiles([]);}} className="bg-slate-100 p-2 rounded-full hover:bg-slate-200"><X size={20} /></button>
             </div>
             <form onSubmit={handleSaveFund} className="space-y-5">
               <div>
@@ -507,38 +528,12 @@ export default function AnimalProfile() {
         </div>
       )}
 
-      {isDonateModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex justify-center items-end max-w-md mx-auto">
-          <div className="bg-white w-full rounded-t-2xl p-5 shadow-2xl">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-black text-slate-800 flex items-center gap-2"><Heart className="text-emerald-500 fill-emerald-500" /> Support {displayName}</h2>
-              <button onClick={() => setIsDonateModalOpen(false)} className="bg-slate-100 p-2 rounded-full"><X size={20} /></button>
-            </div>
-            <div className="space-y-6">
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-3">Amount</label>
-                <div className="grid grid-cols-4 gap-2 mb-3">
-                  {[10, 25, 50, 100].map(amt => <button key={amt} onClick={() => setDonationAmount(amt)} className={`py-2 rounded-lg font-bold ${donationAmount === amt ? 'bg-emerald-600 text-white' : 'bg-slate-100'}`}>${amt}</button>)}
-                </div>
-                <div className="relative"><span className="absolute left-4 top-3 font-bold">$</span><input type="number" value={donationAmount || ''} onChange={(e) => setDonationAmount(parseFloat(e.target.value) || 0)} className="w-full border p-3 pl-8 rounded-lg outline-none" /></div>
-              </div>
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                <div className="flex justify-between items-center mb-2"><label className="text-sm font-bold">Tip Stray Watch</label><span className="text-sm font-bold">{tipPercentage}% (${calculatedTip.toFixed(2)})</span></div>
-                <input type="range" min="0" max="25" step="5" value={tipPercentage} onChange={(e) => setTipPercentage(parseFloat(e.target.value))} className="w-full accent-emerald-600" />
-              </div>
-              <div className="pt-2 border-t flex justify-between items-center"><span className="font-bold">Total Charge</span><span className="text-2xl font-black">${totalCharge.toFixed(2)}</span></div>
-              <button onClick={handleSimulateDonation} className="w-full bg-slate-900 text-white font-bold py-4 rounded-xl">Proceed to Checkout</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {isReportingAbuse && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex justify-center items-end max-w-md mx-auto">
           <div className="bg-white w-full rounded-t-2xl p-5 shadow-2xl">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-black text-rose-600 flex items-center gap-2"><ShieldAlert /> Report Issue</h2>
-              <button onClick={() => setIsReportingAbuse(false)} className="bg-slate-100 p-2 rounded-full"><X size={20} /></button>
+              <button onClick={() => setIsReportingAbuse(false)} className="bg-slate-100 p-2 rounded-full hover:bg-slate-200"><X size={20} /></button>
             </div>
             <form onSubmit={handleAbuseSubmit} className="space-y-4">
               <select value={abuseForm.category} onChange={e => setAbuseForm({...abuseForm, category: e.target.value})} className="w-full border p-3 rounded-lg outline-none">
@@ -550,7 +545,7 @@ export default function AnimalProfile() {
               <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={abuseForm.agreed} onChange={e => setAbuseForm({...abuseForm, agreed: e.target.checked})} required /> I confirm this is accurate.
               </label>
-              <button type="submit" disabled={isSubmittingReport} className="w-full bg-rose-600 text-white font-bold py-3.5 rounded-xl">{isSubmittingReport ? 'Submitting...' : 'Submit Report'}</button>
+              <button type="submit" disabled={isSubmittingReport} className="w-full bg-rose-600 text-white font-bold py-3.5 rounded-xl hover:bg-rose-700">{isSubmittingReport ? 'Submitting...' : 'Submit Report'}</button>
             </form>
           </div>
         </div>

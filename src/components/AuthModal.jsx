@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { 
   X, Mail, Lock, User, ShieldCheck, Heart, Camera, 
-  Home, ShieldAlert, Building, CreditCard
+  Building, Phone, ArrowLeft, CheckCircle2
 } from 'lucide-react';
 
 const GoogleIcon = () => (
@@ -15,28 +15,44 @@ const GoogleIcon = () => (
 );
 
 export default function AuthModal({ isOpen, onClose }) {
-  const [view, setView] = useState('auth');
+  // Views: 'auth', 'personal', 'role', 'rescue_setup'
+  const [view, setView] = useState('auth'); 
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   
+  // Auth State
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  
+  // Personal Info State
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
+  const [phone, setPhone] = useState('');
 
+  // Rescue Setup State
   const [rescueData, setRescueData] = useState({
-    orgName: '', ein: '', website: '', phone: ''
+    orgName: '', ein: '', website: '', orgEmail: '', orgPhone: '',
+    isOwner: true, ownerName: '', ownerEmail: '', alsoFoster: false
   });
 
   useEffect(() => {
     if (isOpen) {
       supabase.auth.getSession().then(({ data: { session } }) => {
         if (session && !session.user.user_metadata?.onboarding_complete) {
+          // Auto-populate from Google OAuth if available
           const meta = session.user.user_metadata;
           const splitName = meta.full_name?.split(' ') || [];
           setFirstName(meta.first_name || splitName[0] || '');
           setLastName(meta.last_name || splitName.slice(1).join(' ') || '');
-          setView('role');
+          setPhone(session.user.phone || meta.phone || '');
+          
+          setRescueData(prev => ({
+            ...prev,
+            orgEmail: session.user.email,
+            orgPhone: session.user.phone || meta.phone || ''
+          }));
+          
+          setView('personal');
         } else {
           setView('auth');
         }
@@ -58,7 +74,7 @@ export default function AuthModal({ isOpen, onClose }) {
     }
   };
 
-  const handleAuth = async (e) => {
+  const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
 
@@ -67,143 +83,169 @@ export default function AuthModal({ isOpen, onClose }) {
       if (error) alert(error.message);
       else onClose();
     } else {
-      const { data, error } = await supabase.auth.signUp({
-        email, password,
-        options: { data: { first_name: firstName, last_name: lastName } }
-      });
+      const { data, error } = await supabase.auth.signUp({ email, password });
       if (error) alert(error.message);
-      else if (data.user) setView('role');
-    }
-    setLoading(false);
-  };
-
-  // Stamp the role directly into the Auth user_metadata
-  const finalizeOnboarding = async (accountType = 'Spotter') => {
-    const { error } = await supabase.auth.updateUser({ 
-      data: { 
-        onboarding_complete: true,
-        account_type: accountType
-      } 
-    });
-    
-    if (error) {
-      alert("Error finalizing profile: " + error.message);
-    } else {
-      onClose();
-    }
-  };
-
-  const handleFosterSetup = async () => {
-    setLoading(true);
-    const { data: { session } } = await supabase.auth.getSession();
-    
-    if (session) {
-      const { error: dirError } = await supabase.from('directory_profiles').upsert([{
-        user_id: session.user.id,
-        type: 'Foster',
-        name: `${firstName} ${lastName}`.trim(),
-        email: session.user.email,
-        phone: session.user.phone || '',
-        availability_status: 'Available',
-        foster_details: {},
-        is_approved: false
-      }], { onConflict: 'user_id' });
-
-      if (dirError) {
-        alert("Error creating Foster profile: " + dirError.message);
-        setLoading(false);
-        return;
+      else if (data.user) {
+        setRescueData(prev => ({ ...prev, orgEmail: email }));
+        setView('personal');
       }
-      
-      await finalizeOnboarding('Foster');
     }
     setLoading(false);
   };
 
-  const handleRescueSetup = async () => {
+  // --- STEP 1: SAVE PERSONAL INFO ---
+  const handlePersonalInfoSubmit = async (e) => {
+    e.preventDefault();
     setLoading(true);
     const { data: { session } } = await supabase.auth.getSession();
     
     if (session) {
-      // 1. Create the Rescue Organization Page
-      const { data: rescueData, error: rescueError } = await supabase
+      await supabase.auth.updateUser({
+        data: { first_name: firstName, last_name: lastName, phone: phone }
+      });
+
+      // Upsert profile immediately so relational DB constraints are satisfied
+      await supabase.from('profiles').upsert([{
+        id: session.user.id,
+        first_name: firstName,
+        last_name: lastName,
+        avatar_url: session.user.user_metadata?.avatar_url || null
+      }]);
+      
+      setView('role');
+    }
+    setLoading(false);
+  };
+
+  // --- STEP 2 & 3: FINALIZE WORKFLOW ---
+  const finalizeOnboarding = async (accountType, customRescueData = null, isSafeClose = false) => {
+    setLoading(true);
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+
+    const safeFirstName = firstName || session.user.email.split('@')[0];
+    const safeLastName = lastName || '';
+    const fullName = `${safeFirstName} ${safeLastName}`.trim();
+    const safePhone = phone || '';
+
+    // 1. Create Directory Profile
+    const dirPayload = {
+      user_id: session.user.id,
+      type: accountType === 'Spotter' ? 'Community' : accountType,
+      name: fullName,
+      email: session.user.email,
+      phone: safePhone,
+      is_approved: false
+    };
+
+    if (accountType === 'Foster' || customRescueData?.alsoFoster) {
+      dirPayload.availability_status = 'Available';
+      dirPayload.open_to_foster = true;
+    }
+    
+    await supabase.from('directory_profiles').upsert([dirPayload], { onConflict: 'user_id' });
+
+    // 2. Setup Rescue Workspace (If Applicable)
+    if (accountType === 'Rescue' && customRescueData) {
+      const { data: rescue, error: rescueError } = await supabase
         .from('rescue_partners')
         .insert([{
-          name: orgName,
-          user_id: session.user.id // Keeping as legacy creator reference
+          user_id: session.user.id,
+          name: customRescueData.orgName,
+          email: customRescueData.orgEmail,
+          ein: customRescueData.ein,
+          website: customRescueData.website,
+          status: 'pending'
         }])
         .select()
         .single();
 
       if (rescueError) {
-        alert("Error creating Rescue profile: " + rescueError.message);
+        alert("Error creating Rescue workspace: " + rescueError.message);
         setLoading(false);
         return;
       }
 
-      // 2. Link the human user as the Team Owner
-      const { error: teamError } = await supabase
-        .from('rescue_team_members')
-        .insert([{
-          rescue_id: rescueData.id,
-          user_id: session.user.id,
-          role: 'owner'
-        }]);
-
-      if (teamError) {
-        console.error("Failed to assign team role:", teamError.message);
-      }
-      
-      // 3. Finalize their personal directory profile
-      const { error: dirError } = await supabase.from('directory_profiles').upsert([{
+      await supabase.from('rescue_team_members').insert([{
+        rescue_id: rescue.id,
         user_id: session.user.id,
-        type: 'Rescue',
-        name: `${firstName} ${lastName}`.trim(),
-        email: session.user.email,
-        phone: session.user.phone || '',
-        is_approved: false
-      }], { onConflict: 'user_id' });
-
-      if (dirError) {
-        alert("Error creating Directory profile: " + dirError.message);
-        setLoading(false);
-        return;
-      }
-      
-      await finalizeOnboarding('Rescue');
+        role: customRescueData.isOwner ? 'owner' : 'admin'
+      }]);
     }
+
+    // 3. Mark Onboarding Complete
+    await supabase.auth.updateUser({ 
+      data: { onboarding_complete: true, account_type: accountType } 
+    });
+
     setLoading(false);
+    
+    if (accountType === 'Rescue' && !isSafeClose) {
+      alert("Rescue Workspace Created! Taking you to settings to complete setup.");
+      window.location.href = '/profile'; // Redirect to settings to see their new workspace
+    } else {
+      onClose();
+    }
+  };
+
+  // Safe Close prevents users from getting trapped in a loop if they click X
+  const handleSafeClose = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session && !session.user.user_metadata?.onboarding_complete) {
+      await supabase.from('profiles').upsert([{ id: session.user.id }]);
+      await finalizeOnboarding('Spotter', null, true);
+    } else {
+      onClose();
+    }
+  };
+
+  // Dynamic Header Text
+  const getHeaderTitle = () => {
+    if (view === 'auth') return isLogin ? 'Welcome Back' : 'Create Account';
+    if (view === 'personal') return 'Step 1: Basic Info';
+    if (view === 'role') return 'Step 2: Choose Role';
+    if (view === 'rescue_setup') return 'Step 3: Rescue Details';
+  };
+
+  // Progress Bar Width
+  const getProgress = () => {
+    if (view === 'personal') return 'w-1/3';
+    if (view === 'role') return 'w-2/3';
+    if (view === 'rescue_setup') return 'w-full';
+    return 'w-0';
   };
 
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex justify-center items-end sm:items-center max-w-md mx-auto transition-all">
       <div className="bg-white w-full rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         
-        <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
-          <h2 className="font-black text-slate-800 text-lg">
-            {view === 'auth' ? (isLogin ? 'Welcome Back' : 'Create Account') : 'Complete Your Profile'}
-          </h2>
-          <button onClick={onClose} className="p-2 bg-slate-200 hover:bg-slate-300 rounded-full text-slate-600 transition-colors">
+        <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0 relative">
+          {/* Progress Bar (Only visible during onboarding wizard) */}
+          {view !== 'auth' && (
+            <div className="absolute top-0 left-0 w-full h-1 bg-slate-200">
+              <div className={`h-full bg-cyan-500 transition-all duration-500 ${getProgress()}`}></div>
+            </div>
+          )}
+
+          <div className="flex items-center gap-2 mt-1">
+            {(view === 'role' || view === 'rescue_setup') && (
+              <button onClick={() => setView(view === 'rescue_setup' ? 'role' : 'personal')} className="p-1.5 hover:bg-slate-200 rounded-full text-slate-500 transition-colors">
+                <ArrowLeft size={18} />
+              </button>
+            )}
+            <h2 className="font-black text-slate-800 text-lg">{getHeaderTitle()}</h2>
+          </div>
+          
+          <button onClick={handleSafeClose} className="p-2 bg-slate-200 hover:bg-slate-300 rounded-full text-slate-600 transition-colors mt-1">
             <X size={18} />
           </button>
         </div>
 
         <div className="p-6 overflow-y-auto">
+          
+          {/* --- AUTH VIEW --- */}
           {view === 'auth' && (
-            <form onSubmit={handleAuth} className="space-y-4">
-              {!isLogin && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">First Name</label>
-                    <input type="text" required value={firstName} onChange={e => setFirstName(e.target.value)} className="w-full bg-slate-50 border border-slate-300 p-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-cyan-500" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Last Name</label>
-                    <input type="text" required value={lastName} onChange={e => setLastName(e.target.value)} className="w-full bg-slate-50 border border-slate-300 p-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-cyan-500" />
-                  </div>
-                </div>
-              )}
-              
+            <form onSubmit={handleAuthSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Email</label>
                 <div className="relative">
@@ -236,8 +278,7 @@ export default function AuthModal({ isOpen, onClose }) {
                 disabled={loading}
                 className="w-full bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold py-3.5 rounded-xl shadow-sm transition-all flex items-center justify-center gap-3 disabled:opacity-50"
               >
-                <GoogleIcon />
-                Continue with Google
+                <GoogleIcon /> Continue with Google
               </button>
 
               <p className="text-center text-sm font-bold text-slate-500 mt-4">
@@ -249,15 +290,45 @@ export default function AuthModal({ isOpen, onClose }) {
             </form>
           )}
 
+          {/* --- STEP 1: PERSONAL INFO --- */}
+          {view === 'personal' && (
+            <form onSubmit={handlePersonalInfoSubmit} className="space-y-5 animate-in fade-in slide-in-from-right-4">
+              <div className="bg-cyan-50 p-3 rounded-xl border border-cyan-100 flex gap-3 mb-2">
+                <CheckCircle2 className="text-cyan-600 shrink-0 mt-0.5" size={20} />
+                <p className="text-xs text-cyan-800">Please provide your contact details. This ensures rescues can reach you safely.</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">First Name *</label>
+                  <input type="text" required value={firstName} onChange={e => setFirstName(e.target.value)} className="w-full bg-slate-50 border border-slate-300 p-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-cyan-500" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Last Name *</label>
+                  <input type="text" required value={lastName} onChange={e => setLastName(e.target.value)} className="w-full bg-slate-50 border border-slate-300 p-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-cyan-500" />
+                </div>
+              </div>
+              
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Mobile Phone *</label>
+                <div className="relative">
+                  <input type="tel" required placeholder="(555) 555-5555" value={phone} onChange={e => setPhone(e.target.value)} className="w-full bg-slate-50 border border-slate-300 p-3 pl-10 rounded-xl text-sm outline-none focus:ring-2 focus:ring-cyan-500" />
+                  <Phone size={18} className="absolute left-3.5 top-3.5 text-slate-400" />
+                </div>
+              </div>
+
+              <button type="submit" disabled={loading} className="w-full bg-slate-900 hover:bg-black text-white font-black py-4 rounded-xl shadow-md transition-all text-lg mt-4 disabled:opacity-50">
+                {loading ? 'Saving...' : 'Next Step'}
+              </button>
+            </form>
+          )}
+
+          {/* --- STEP 2: ROLE SELECTION --- */}
           {view === 'role' && (
             <div className="space-y-4 animate-in fade-in slide-in-from-right-4">
               <h3 className="font-bold text-slate-800 mb-2">How do you plan to use StrayGuard?</h3>
               
-              <button onClick={async () => {
-                setLoading(true);
-                await finalizeOnboarding('Spotter');
-                setLoading(false);
-              }} className="w-full flex items-center gap-4 p-4 border border-slate-200 hover:border-cyan-400 hover:bg-cyan-50 rounded-2xl transition-all text-left group">
+              <button onClick={() => finalizeOnboarding('Spotter')} className="w-full flex items-center gap-4 p-4 border border-slate-200 hover:border-cyan-400 hover:bg-cyan-50 rounded-2xl transition-all text-left group">
                 <div className="bg-slate-100 group-hover:bg-cyan-100 p-3 rounded-full shrink-0"><Camera size={24} className="text-cyan-600" /></div>
                 <div>
                   <p className="font-black text-slate-800">Community Spotter</p>
@@ -265,7 +336,7 @@ export default function AuthModal({ isOpen, onClose }) {
                 </div>
               </button>
 
-              <button onClick={handleFosterSetup} className="w-full flex items-center gap-4 p-4 border border-slate-200 hover:border-blue-400 hover:bg-blue-50 rounded-2xl transition-all text-left group">
+              <button onClick={() => finalizeOnboarding('Foster')} className="w-full flex items-center gap-4 p-4 border border-slate-200 hover:border-blue-400 hover:bg-blue-50 rounded-2xl transition-all text-left group">
                 <div className="bg-slate-100 group-hover:bg-blue-100 p-3 rounded-full shrink-0"><Heart size={24} className="text-blue-600" /></div>
                 <div>
                   <p className="font-black text-slate-800">Foster Home</p>
@@ -283,13 +354,10 @@ export default function AuthModal({ isOpen, onClose }) {
             </div>
           )}
 
+          {/* --- STEP 3: RESCUE SETUP --- */}
           {view === 'rescue_setup' && (
-            <form onSubmit={handleRescueSetup} className="space-y-4 animate-in fade-in slide-in-from-right-4">
-              <div className="bg-indigo-50 p-3 rounded-xl border border-indigo-100 mb-4 flex gap-3">
-                <ShieldAlert className="text-indigo-600 shrink-0 mt-0.5" size={20} />
-                <p className="text-xs text-indigo-800">Your organization will be placed in a pending state while we verify your 501(c)(3) status and network references.</p>
-              </div>
-
+            <form onSubmit={(e) => { e.preventDefault(); finalizeOnboarding('Rescue', rescueData); }} className="space-y-4 animate-in fade-in slide-in-from-right-4">
+              
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Organization Name *</label>
                 <input type="text" required placeholder="e.g., Downtown Dog Rescue" value={rescueData.orgName} onChange={e => setRescueData({...rescueData, orgName: e.target.value})} className="w-full bg-slate-50 border border-slate-300 p-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
@@ -297,22 +365,48 @@ export default function AuthModal({ isOpen, onClose }) {
               
               <div className="grid grid-cols-2 gap-3">
                 <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Org Email *</label>
+                  <input type="email" required value={rescueData.orgEmail} onChange={e => setRescueData({...rescueData, orgEmail: e.target.value})} className="w-full bg-slate-50 border border-slate-300 p-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Org Phone *</label>
+                  <input type="tel" required value={rescueData.orgPhone} onChange={e => setRescueData({...rescueData, orgPhone: e.target.value})} className="w-full bg-slate-50 border border-slate-300 p-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">501(c)(3) EIN</label>
                   <input type="text" placeholder="Optional for now" value={rescueData.ein} onChange={e => setRescueData({...rescueData, ein: e.target.value})} className="w-full bg-slate-50 border border-slate-300 p-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Public Phone *</label>
-                  <input type="tel" required value={rescueData.phone} onChange={e => setRescueData({...rescueData, phone: e.target.value})} className="w-full bg-slate-50 border border-slate-300 p-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Website URL *</label>
+                  <input type="url" required placeholder="https://" value={rescueData.website} onChange={e => setRescueData({...rescueData, website: e.target.value})} className="w-full bg-slate-50 border border-slate-300 p-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Website URL *</label>
-                <input type="url" required placeholder="https://" value={rescueData.website} onChange={e => setRescueData({...rescueData, website: e.target.value})} className="w-full bg-slate-50 border border-slate-300 p-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+              <div className="border-t border-slate-200 pt-4 mt-2 space-y-3">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input type="checkbox" checked={rescueData.isOwner} onChange={e => setRescueData({...rescueData, isOwner: e.target.checked})} className="w-5 h-5 accent-indigo-600 rounded" />
+                  <span className="text-sm font-bold text-slate-800">I am the Owner/Director of this Rescue</span>
+                </label>
+                
+                {!rescueData.isOwner && (
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-3">
+                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Owner Invitation Info</p>
+                    <input type="text" required placeholder="Owner's Full Name" value={rescueData.ownerName} onChange={e => setRescueData({...rescueData, ownerName: e.target.value})} className="w-full bg-white border border-slate-300 p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+                    <input type="email" required placeholder="Owner's Email Address" value={rescueData.ownerEmail} onChange={e => setRescueData({...rescueData, ownerEmail: e.target.value})} className="w-full bg-white border border-slate-300 p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+                  </div>
+                )}
+                
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input type="checkbox" checked={rescueData.alsoFoster} onChange={e => setRescueData({...rescueData, alsoFoster: e.target.checked})} className="w-5 h-5 accent-indigo-600 rounded" />
+                  <span className="text-sm font-bold text-slate-800">I also want to foster animals</span>
+                </label>
               </div>
 
-              <button type="submit" disabled={loading} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-4 rounded-xl shadow-md transition-all text-lg mt-2 disabled:opacity-50">
-                {loading ? 'Submitting...' : 'Submit Rescue Application'}
+              <button type="submit" disabled={loading} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-4 rounded-xl shadow-md transition-all text-lg mt-4 disabled:opacity-50">
+                {loading ? 'Processing...' : 'Complete Setup'}
               </button>
             </form>
           )}
