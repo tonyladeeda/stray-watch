@@ -10,7 +10,7 @@ import {
 import CommentSection from '../components/CommentSection';
 import FollowButton from '../components/FollowButton';
 import ShareButton from '../components/ShareButton';
-import DonationPanel from '../components/DonationPanel'; // NEW
+import DonationPanel from '../components/DonationPanel'; 
 import { SHELTER_DIRECTORY } from '../shelterData';
 
 const STATUS_OPTIONS = ['Spotted', 'Rescued', 'In-care', 'Fostered', 'Adopted', 'Deceased', 'Euthanized'];
@@ -20,7 +20,7 @@ export default function AnimalProfile() {
   const navigate = useNavigate();
   const [animal, setAnimal] = useState(null);
   const [sightings, setSightings] = useState([]);
-  const [rescue, setRescue] = useState(null); // Added for handler info
+  const [rescue, setRescue] = useState(null); 
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState(null);
   const [isVerifiedRescue, setIsVerifiedRescue] = useState(false);
@@ -33,6 +33,9 @@ export default function AnimalProfile() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [isTransferring, setIsTransferring] = useState(false);
   const [transferEmail, setTransferEmail] = useState('');
+  
+  // NEW: Foster Match State
+  const [suggestedFosters, setSuggestedFosters] = useState([]);
 
   // Abuse Report State
   const [abuseReportsCount, setAbuseReportsCount] = useState(0);
@@ -52,6 +55,22 @@ export default function AnimalProfile() {
       fetchAnimalData(session);
     });
   }, [id]);
+
+  // NEW: Triggers the Foster Match AI Query whenever 'Foster Needed' is activated
+  useEffect(() => {
+    if (session?.user?.id === animal?.handler_id && isVerifiedRescue && animal?.available_for_foster) {
+      const fetchFosters = async () => {
+        const { data } = await supabase
+          .from('directory_profiles')
+          .select('*')
+          .eq('open_to_foster', true)
+          .eq('availability_status', 'Available')
+          .limit(3);
+        if (data) setSuggestedFosters(data);
+      };
+      fetchFosters();
+    }
+  }, [session?.user?.id, isVerifiedRescue, animal?.available_for_foster, animal?.handler_id]);
 
   const fetchAnimalData = async (currentSession) => {
     setLoading(true);
@@ -181,7 +200,7 @@ export default function AnimalProfile() {
     const { error } = await supabase.from('animals').update(updatePayload).eq('id', id);
     if (!error) {
         setAnimal({ ...animal, ...updatePayload });
-        fetchAnimalData({ user: session.user }); // Refresh to get Rescue object if applicable
+        fetchAnimalData({ user: session.user }); 
     }
     setIsUpdating(false);
   };
@@ -384,7 +403,6 @@ export default function AnimalProfile() {
               </>
             )}
 
-            {/* Injected the new Generic Donation Panel */}
             {rescue && (
               <div className="mt-4">
                 <DonationPanel 
@@ -445,8 +463,36 @@ export default function AnimalProfile() {
           </div>
         )}
 
+        {/* --- NEW: INJECTED FOSTER MATCH AI PANEL --- */}
+        {isCurrentHandler && isVerifiedRescue && animal.available_for_foster && (
+          <div className="bg-blue-50 rounded-2xl p-5 shadow-sm border border-blue-100 mt-4">
+            <h3 className="font-bold text-blue-900 flex items-center gap-2 mb-3 text-sm">
+              <Heart size={16} className="text-blue-600" /> Suggested Foster Matches
+            </h3>
+            {suggestedFosters.length === 0 ? (
+              <p className="text-xs text-blue-600">No available fosters found nearby at this time.</p>
+            ) : (
+              <div className="space-y-3">
+                {suggestedFosters.map(foster => (
+                  <div key={foster.id} className="bg-white p-3 rounded-xl border border-blue-100 flex items-center justify-between shadow-sm">
+                    <div>
+                      <p className="font-bold text-blue-900 text-sm">{foster.name}</p>
+                      <p className="text-[10px] font-bold text-blue-600 flex items-center gap-1 mt-0.5 uppercase tracking-wider">
+                        <Activity size={12}/> Ready to Foster
+                      </p>
+                    </div>
+                    <Link to={`/directory/${foster.id}`} className="text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg transition-colors">
+                      Review
+                    </Link>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* --- HANDLER CLAIM CARD --- */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4 mt-6">
           <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Current Handler</p>
           {animal.handler_email ? (
             <div className="flex flex-col gap-3">

@@ -94,7 +94,10 @@ export default function Dashboard() {
     const { data: myNotifs } = await supabase.from('notifications').select('*').eq('user_id', userId).order('created_at', { ascending: false });
 
     if (myReports) setReports(myReports);
-    if (mySaved) setSaved(mySaved.map(f => f.animals));
+    
+    // FIX FOR CRASH: Filter out boolean false/null values if an animal was deleted from the database
+    if (mySaved) setSaved(mySaved.map(f => f.animals).filter(Boolean));
+    
     if (myNotifs) setNotifications(myNotifs);
 
     const reportedCount = myReports ? myReports.length : 0;
@@ -114,7 +117,6 @@ export default function Dashboard() {
     const element = pdfRef.current;
     
     try {
-      // useCORS is required to capture the external Leaflet map tiles
       const canvas = await html2canvas(element, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
       const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF('p', 'mm', 'a4');
@@ -324,7 +326,6 @@ export default function Dashboard() {
           </div>
         )}
       </div>
-
     </div>
   );
 }

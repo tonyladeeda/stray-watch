@@ -53,10 +53,10 @@ export default function RescueDashboard() {
     if (!rescueData) return setLoading(false);
     setRescueProfile(rescueData);
 
-    // 2. Fetch Animal Roster
+    // 2. Fetch Animal Roster AND related Sightings (to get photos/location)
     const { data: animalData } = await supabase
       .from('animals')
-      .select('*')
+      .select('*, sightings(image_url, image_urls, location)')
       .eq('handler_id', userId)
       .order('created_at', { ascending: false });
 
@@ -244,35 +244,42 @@ export default function RescueDashboard() {
               </div>
             ) : (
               <div className="grid gap-3">
-                {roster.map(animal => (
-                  <Link key={animal.id} to={`/animal/${animal.id}`} className={`bg-white p-3 rounded-xl border shadow-sm flex gap-3 items-center group transition-colors ${animal.is_archived ? 'opacity-60 border-slate-200' : animal.record_type === 'Shelter Urgent' ? 'border-rose-200 hover:bg-rose-50' : 'border-slate-200 hover:bg-slate-50'}`}>
-                    <div className="w-16 h-16 shrink-0 rounded-lg overflow-hidden bg-slate-100 relative">
-                      {animal.image_url || animal.image_urls?.[0] ? (
-                        <img src={animal.image_url || animal.image_urls[0]} alt={animal.name} className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center"><PawPrint size={20} className="text-slate-300" /></div>
-                      )}
-                    </div>
-                    <div className="flex-grow min-w-0">
-                      <div className="flex justify-between items-start mb-1">
-                        <h3 className="font-bold text-slate-800 truncate pr-2">{animal.name || 'Unknown'}</h3>
-                        <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full shrink-0 ${animal.is_archived ? 'bg-slate-100 text-slate-500' : animal.record_type === 'Shelter Urgent' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                          {animal.is_archived ? 'Archived' : animal.status}
-                        </span>
+                {roster.map(animal => {
+                  // NEW: Safely extract the joined images and location
+                  const firstSighting = animal.sightings?.[0];
+                  const imgUrl = firstSighting?.image_urls?.[0] || firstSighting?.image_url || null;
+                  const loc = animal.location || firstSighting?.location || 'Location unknown';
+
+                  return (
+                    <Link key={animal.id} to={`/animal/${animal.id}`} className={`bg-white p-3 rounded-xl border shadow-sm flex gap-3 items-center group transition-colors ${animal.is_archived ? 'opacity-60 border-slate-200' : animal.record_type === 'Shelter Urgent' ? 'border-rose-200 hover:bg-rose-50' : 'border-slate-200 hover:bg-slate-50'}`}>
+                      <div className="w-16 h-16 shrink-0 rounded-lg overflow-hidden bg-slate-100 relative">
+                        {imgUrl ? (
+                          <img src={imgUrl} alt={animal.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center"><PawPrint size={20} className="text-slate-300" /></div>
+                        )}
                       </div>
-                      <p className="text-xs text-slate-500 truncate flex items-center gap-1 mb-1.5">
-                        <MapPin size={12} /> {animal.location_zip || 'Location unknown'}
-                      </p>
-                      
-                      {/* Placement CTAs */}
-                      <div className="flex gap-1.5">
-                        {animal.available_for_foster && <span className="text-[9px] font-bold bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-100 flex items-center gap-1"><Heart size={10}/> Foster Needed</span>}
-                        {animal.available_for_adoption && <span className="text-[9px] font-bold bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded border border-purple-100 flex items-center gap-1"><Home size={10}/> Adoptable</span>}
+                      <div className="flex-grow min-w-0">
+                        <div className="flex justify-between items-start mb-1">
+                          <h3 className="font-bold text-slate-800 truncate pr-2">{animal.name || 'Unknown'}</h3>
+                          <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full shrink-0 ${animal.is_archived ? 'bg-slate-100 text-slate-500' : animal.record_type === 'Shelter Urgent' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                            {animal.is_archived ? 'Archived' : animal.status}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 truncate flex items-center gap-1 mb-1.5">
+                          <MapPin size={12} /> {loc}
+                        </p>
+                        
+                        {/* Placement CTAs */}
+                        <div className="flex gap-1.5">
+                          {animal.available_for_foster && <span className="text-[9px] font-bold bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-100 flex items-center gap-1"><Heart size={10}/> Foster Needed</span>}
+                          {animal.available_for_adoption && <span className="text-[9px] font-bold bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded border border-purple-100 flex items-center gap-1"><Home size={10}/> Adoptable</span>}
+                        </div>
                       </div>
-                    </div>
-                    <ChevronRight size={18} className="text-slate-300 group-hover:text-indigo-600 shrink-0" />
-                  </Link>
-                ))}
+                      <ChevronRight size={18} className="text-slate-300 group-hover:text-indigo-600 shrink-0" />
+                    </Link>
+                  );
+                })}
               </div>
             )}
           </div>
