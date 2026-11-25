@@ -422,15 +422,28 @@ export default function AnimalProfile() {
 
         {/* --- URGENT SHELTER INFO --- */}
         {isUrgent && (
-          <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 shadow-sm">
-            <h3 className="text-rose-800 font-black text-sm uppercase tracking-wider flex items-center gap-1.5 mb-3"><AlertTriangle size={16} /> Urgent Shelter Case</h3>
-            <div className="grid grid-cols-2 gap-3 text-sm mb-2">
-              <div><span className="text-rose-600/70 text-xs font-bold block">Shelter ID</span><span className="font-mono font-bold text-rose-900 bg-white px-2 py-1 rounded inline-block shadow-sm">{animal.shelter_id}</span></div>
-              <div><span className="text-rose-600/70 text-xs font-bold block">Deadline</span><span className="font-bold text-rose-900 flex items-center gap-1"><Clock size={14} />{animal.urgent_deadline ? new Date(animal.urgent_deadline).toLocaleDateString() : 'Unknown'}</span></div>
+          <div className="bg-socal-urgent-light border border-red-300 rounded-2xl overflow-hidden shadow-sm">
+            <div className="bg-gradient-to-r from-[#DC2626] via-[#EF4444] to-[#B91C1C] px-4 py-2.5 text-white flex items-center justify-between">
+              <h3 className="font-extrabold text-xs uppercase tracking-wider flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                <AlertTriangle size={14} strokeWidth={2.5} /> At Risk • Urgent Shelter Case
+              </h3>
             </div>
-            {shelterDetails?.phone && (
-              <p className="text-xs text-rose-700 font-semibold mt-2">Shelter Phone: {shelterDetails.phone}</p>
-            )}
+            <div className="p-4 grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <span className="text-socal-urgent-dark/80 text-[10px] font-extrabold uppercase tracking-wider block mb-1">Shelter ID</span>
+                <span className="font-mono font-bold text-socal-ink bg-white border border-red-200 px-2.5 py-1 rounded-lg inline-block shadow-sm">
+                  {animal.shelter_id || 'Unknown'}
+                </span>
+              </div>
+              <div>
+                <span className="text-socal-urgent-dark/80 text-[10px] font-extrabold uppercase tracking-wider block mb-1">Deadline</span>
+                <span className="font-extrabold text-socal-urgent flex items-center gap-1.5 mt-1">
+                  <Clock size={15} />
+                  {animal.urgent_deadline ? new Date(animal.urgent_deadline).toLocaleDateString() : 'Unknown'}
+                </span>
+              </div>
+            </div>
           </div>
         )}
 

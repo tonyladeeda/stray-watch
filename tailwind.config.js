@@ -6,17 +6,23 @@ export default {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['"Plus Jakarta Sans"', 'system-ui', '-apple-system', 'sans-serif'],
+      },
       colors: {
         socal: {
-          orange: '#E88B44',
-          'orange-dark': '#D47731',
-          'orange-light': '#FDF1E6',
-          plum: '#692F64',
-          'plum-dark': '#52234E',
-          'plum-light': '#F6EDF5',
-          ink: '#2B3A4A',
-          sand: '#FAF7F2',
-          'sand-border': '#EAE2D6',
+          orange: '#F25C19',
+          'orange-dark': '#D4480A',
+          'orange-light': '#FFF2EB',
+          plum: '#581C69',
+          'plum-dark': '#3E124B',
+          'plum-light': '#F6EEF9',
+          urgent: '#DC2626',
+          'urgent-dark': '#B91C1C',
+          'urgent-light': '#FEF2F2',
+          ink: '#111827',
+          sand: '#F6F5F2',
+          'sand-border': '#E6E2DC',
         },
       },
     },

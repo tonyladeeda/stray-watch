@@ -4,8 +4,9 @@
 
 @layer base {
   body {
-    background-color: #FAF7F2;
-    color: #2B3A4A;
+    background-color: #F6F5F2;
+    color: #111827;
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }

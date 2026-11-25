@@ -129,7 +129,7 @@ export default function App() {
         <>
           {isMenuOpen && (
             <div
-              className="fixed inset-0 bg-socal-ink/40 backdrop-blur-sm z-20 max-w-md mx-auto"
+              className="fixed inset-0 bg-socal-ink/45 backdrop-blur-sm z-20 max-w-md mx-auto"
               onClick={() => setIsMenuOpen(false)}
             />
           )}
@@ -139,19 +139,19 @@ export default function App() {
               <div className="flex flex-col items-end gap-3 mb-2 animate-in fade-in slide-in-from-bottom-4">
                 <button
                   onClick={() => openReportModal('Shelter Urgent')}
-                  className="flex items-center gap-3 bg-white hover:bg-rose-50 text-socal-ink font-bold py-3 px-5 rounded-full shadow-lg border border-socal-sand-border transition-colors"
+                  className="flex items-center gap-3 bg-white hover:bg-socal-urgent-light text-socal-ink font-bold py-3 pl-5 pr-3.5 rounded-full shadow-xl border border-red-200 transition-all"
                 >
                   Post Urgent Shelter Dog
-                  <div className="bg-rose-100 text-rose-600 p-1.5 rounded-full">
+                  <div className="bg-socal-urgent text-white p-2 rounded-full shadow-sm">
                     <Clock size={16} />
                   </div>
                 </button>
                 <button
                   onClick={() => openReportModal('Stray')}
-                  className="flex items-center gap-3 bg-white hover:bg-socal-orange-light text-socal-ink font-bold py-3 px-5 rounded-full shadow-lg border border-socal-sand-border transition-colors"
+                  className="flex items-center gap-3 bg-white hover:bg-socal-orange-light text-socal-ink font-bold py-3 pl-5 pr-3.5 rounded-full shadow-xl border border-socal-orange/30 transition-all"
                 >
                   Report Stray Sighting
-                  <div className="bg-socal-orange-light text-socal-orange-dark p-1.5 rounded-full">
+                  <div className="bg-socal-orange text-white p-2 rounded-full shadow-sm">
                     <Camera size={16} />
                   </div>
                 </button>
@@ -159,14 +159,14 @@ export default function App() {
             )}
             <button
               onClick={() => setIsMenuOpen(!isMenuOpen)}
-              className={`p-4 rounded-full shadow-lg font-bold transition-all duration-300 text-white ${
+              className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-300 text-white ring-4 ring-white ${
                 isMenuOpen
-                  ? 'bg-socal-ink rotate-45'
-                  : 'bg-socal-orange hover:bg-socal-orange-dark shadow-socal-orange/40 hover:scale-105'
+                  ? 'bg-socal-ink rotate-45 shadow-xl'
+                  : 'bg-gradient-to-br from-[#FF6B2B] to-[#DC4405] hover:brightness-105 shadow-[0_8px_20px_-4px_rgba(242,92,25,0.65)] hover:scale-105 active:scale-95'
               }`}
               aria-label="Report Animal"
             >
-              <Plus size={28} strokeWidth={2.5} />
+              <Plus size={28} strokeWidth={2.75} />
             </button>
           </div>
         </>
