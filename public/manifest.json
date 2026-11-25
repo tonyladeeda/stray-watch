@@ -1,0 +1,28 @@
+{
+  "short_name": "SoCalStrays",
+  "name": "SoCalStrays \u2014 LA Stray & Shelter Rescue Network",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "48x48 32x32 16x16",
+      "type": "image/x-icon"
+    },
+    {
+      "src": "/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#F9F5EA",
+  "theme_color": "#2C3A42",
+  "display": "standalone",
+  "orientation": "portrait"
+}

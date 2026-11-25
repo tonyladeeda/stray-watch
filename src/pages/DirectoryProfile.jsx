@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { 
   ArrowLeft, Share2, Phone, Mail, Globe, AtSign, 
-  ShieldCheck, Heart, Home, Stethoscope, Car, User, 
+  ShieldCheck, Heart, Car, User, 
   Calendar, MessageSquare, ClipboardList 
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
@@ -60,10 +60,10 @@ export default function DirectoryProfile() {
   };
 
   const getBaseTheme = (p) => {
-    if (p.type === 'Rescue') return { icon: <ShieldCheck size={28} className="text-blue-600"/>, bg: 'bg-blue-50', border: 'border-blue-200' };
+    if (p.type === 'Rescue') return { icon: <ShieldCheck size={28} className="text-socal-plum"/>, bg: 'bg-socal-plum-light', border: 'border-socal-plum/25' };
     if (p.open_to_foster) return { icon: <Heart size={28} className="text-rose-600"/>, bg: 'bg-rose-50', border: 'border-rose-200' };
-    if (p.open_to_volunteer) return { icon: <Car size={28} className="text-amber-600"/>, bg: 'bg-amber-50', border: 'border-amber-200' };
-    return { icon: <User size={28} className="text-slate-600"/>, bg: 'bg-slate-50', border: 'border-slate-200' };
+    if (p.open_to_volunteer) return { icon: <Car size={28} className="text-socal-orange-dark"/>, bg: 'bg-socal-orange-light', border: 'border-socal-orange/30' };
+    return { icon: <User size={28} className="text-socal-ink"/>, bg: 'bg-socal-sand', border: 'border-socal-sand-border' };
   };
 
   if (loading) return <div className="p-8 text-center font-bold text-slate-500">Loading profile...</div>;
@@ -72,12 +72,12 @@ export default function DirectoryProfile() {
   const theme = getBaseTheme(profile);
 
   return (
-    <div className="bg-slate-50 min-h-screen pb-24 font-sans text-slate-900">
-      <div className="bg-white p-3 border-b border-slate-200 sticky top-[64px] z-10 flex items-center justify-between shadow-sm">
-        <button onClick={() => navigate(-1)} className="p-2 bg-slate-100 rounded-full text-slate-600 hover:bg-slate-200 transition-colors">
+    <div className="bg-socal-sand min-h-screen pb-24 font-sans text-socal-ink">
+      <div className="bg-white/95 backdrop-blur-sm p-3 border-b border-socal-sand-border sticky top-[64px] z-10 flex items-center justify-between shadow-sm">
+        <button onClick={() => navigate(-1)} className="p-2 bg-socal-sand rounded-full text-socal-ink hover:bg-socal-sand-border transition-colors">
           <ArrowLeft size={20} />
         </button>
-        <button onClick={handleShare} className="p-2 text-slate-600 hover:bg-slate-100 rounded-full transition-colors flex items-center gap-2">
+        <button onClick={handleShare} className="p-2 text-socal-ink hover:bg-socal-sand rounded-full transition-colors flex items-center gap-2">
           <span className="text-xs font-bold">{copied ? 'Copied URL!' : 'Share'}</span>
           <Share2 size={18} />
         </button>
@@ -92,7 +92,7 @@ export default function DirectoryProfile() {
           
           <div className="flex flex-wrap justify-center gap-2 mb-3">
             {profile.type === 'Rescue' && (
-              <span className="text-[10px] font-black uppercase tracking-widest text-blue-700 bg-blue-100 px-3 py-1 rounded-full flex items-center gap-1 border border-blue-200">
+              <span className="text-[10px] font-black uppercase tracking-widest text-socal-plum bg-socal-plum-light px-3 py-1 rounded-full flex items-center gap-1 border border-socal-plum/20">
                 <ShieldCheck size={12}/> Rescue
               </span>
             )}
@@ -102,18 +102,18 @@ export default function DirectoryProfile() {
               </span>
             )}
             {profile.open_to_volunteer && (
-              <span className="text-[10px] font-black uppercase tracking-widest text-amber-700 bg-amber-100 px-3 py-1 rounded-full flex items-center gap-1 border border-amber-200">
+              <span className="text-[10px] font-black uppercase tracking-widest text-socal-orange-dark bg-socal-orange-light px-3 py-1 rounded-full flex items-center gap-1 border border-socal-orange/30">
                 <Car size={12}/> Volunteer
               </span>
             )}
             {profile.type === 'Community' && !profile.open_to_foster && !profile.open_to_volunteer && (
-              <span className="text-[10px] font-black uppercase tracking-widest text-slate-600 bg-slate-100 px-3 py-1 rounded-full flex items-center gap-1 border border-slate-200">
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-600 bg-socal-sand px-3 py-1 rounded-full flex items-center gap-1 border border-socal-sand-border">
                 <User size={12}/> Community Member
               </span>
             )}
           </div>
 
-          <h1 className="text-2xl font-black text-slate-800 tracking-tight">{profile.name}</h1>
+          <h1 className="text-2xl font-black text-socal-ink tracking-tight">{profile.name}</h1>
           {profile.bio && (
             <p className="text-sm text-slate-600 mt-3 leading-relaxed max-w-sm mx-auto">{profile.bio}</p>
           )}
@@ -162,7 +162,7 @@ export default function DirectoryProfile() {
 
             {isViewerVerifiedRescue && (
               <button 
-                onClick={() => alert('Will route to this user\'s Master Application PDF view')}
+                onClick={() => alert("Will route to this user's Master Application PDF view")}
                 className="w-full bg-rose-600 hover:bg-rose-700 text-white font-bold py-3 rounded-xl shadow-sm transition-colors flex items-center justify-center gap-2 mt-2"
               >
                 <ClipboardList size={18} /> View Master Foster Application
@@ -173,17 +173,17 @@ export default function DirectoryProfile() {
 
         {/* VOLUNTEER CAPABILITIES */}
         {profile.open_to_volunteer && (
-          <div className="bg-amber-50 rounded-2xl p-5 border border-amber-100 shadow-sm space-y-4">
-            <h3 className="font-bold text-amber-900 flex items-center gap-2 border-b border-amber-200 pb-2">
-              <Car size={18} className="text-amber-600" /> Volunteer Profile
+          <div className="bg-socal-orange-light rounded-2xl p-5 border border-socal-orange/25 shadow-sm space-y-4">
+            <h3 className="font-bold text-socal-ink flex items-center gap-2 border-b border-socal-orange/20 pb-2">
+              <Car size={18} className="text-socal-orange-dark" /> Volunteer Profile
             </h3>
 
             {profile.volunteer_capabilities?.length > 0 && (
               <div>
-                <p className="text-[10px] font-bold text-amber-500 uppercase tracking-wider mb-2">Ways I can help</p>
+                <p className="text-[10px] font-bold text-socal-orange-dark uppercase tracking-wider mb-2">Ways I can help</p>
                 <div className="flex flex-wrap gap-2">
                   {profile.volunteer_capabilities.map(cap => (
-                    <span key={cap} className="bg-white border border-amber-200 text-amber-800 text-xs font-bold px-2.5 py-1 rounded-lg shadow-sm">
+                    <span key={cap} className="bg-white border border-socal-orange/25 text-socal-ink text-xs font-bold px-2.5 py-1 rounded-lg shadow-sm">
                       {cap}
                     </span>
                   ))}
@@ -193,12 +193,12 @@ export default function DirectoryProfile() {
 
             {profile.volunteer_availability?.length > 0 && (
               <div>
-                <p className="text-[10px] font-bold text-amber-500 uppercase tracking-wider mb-2 flex items-center gap-1">
+                <p className="text-[10px] font-bold text-socal-orange-dark uppercase tracking-wider mb-2 flex items-center gap-1">
                   <Calendar size={12}/> Typical Availability
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {profile.volunteer_availability.map(time => (
-                    <span key={time} className="bg-white border border-amber-200 text-amber-800 text-xs font-bold px-2.5 py-1 rounded-lg shadow-sm">
+                    <span key={time} className="bg-white border border-socal-orange/25 text-socal-ink text-xs font-bold px-2.5 py-1 rounded-lg shadow-sm">
                       {time}
                     </span>
                   ))}
@@ -208,10 +208,10 @@ export default function DirectoryProfile() {
 
             {profile.volunteer_notes && (
               <div>
-                <p className="text-[10px] font-bold text-amber-500 uppercase tracking-wider mb-1 flex items-center gap-1">
+                <p className="text-[10px] font-bold text-socal-orange-dark uppercase tracking-wider mb-1 flex items-center gap-1">
                   <MessageSquare size={12}/> Additional Notes
                 </p>
-                <p className="text-sm text-amber-900 bg-white p-3 rounded-lg border border-amber-100 shadow-sm">
+                <p className="text-sm text-socal-ink bg-white p-3 rounded-lg border border-socal-orange/20 shadow-sm">
                   {profile.volunteer_notes}
                 </p>
               </div>
@@ -220,31 +220,31 @@ export default function DirectoryProfile() {
         )}
 
         {/* CONTACT INFO */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
-          <h3 className="font-bold text-slate-800 text-sm border-b border-slate-100 pb-2">Contact Information</h3>
+        <div className="bg-white rounded-2xl p-5 border border-socal-sand-border shadow-sm space-y-4">
+          <h3 className="font-bold text-socal-ink text-sm border-b border-socal-sand-border/70 pb-2">Contact Information</h3>
           
           {profile.phone && (
-            <div className="flex items-center justify-between p-2 hover:bg-slate-50 rounded-lg transition-colors group">
+            <div className="flex items-center justify-between p-2 hover:bg-socal-sand/60 rounded-lg transition-colors group">
               <div className="flex items-center gap-3">
-                <div className="bg-slate-100 p-2 rounded-lg group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors">
+                <div className="bg-socal-sand p-2 rounded-lg group-hover:bg-socal-orange-light group-hover:text-socal-orange-dark transition-colors">
                   <Phone size={18}/>
                 </div>
                 <div>
                   <p className="text-xs font-bold text-slate-400 uppercase">Phone</p>
-                  <p className="text-sm font-bold text-slate-800">{profile.phone}</p>
+                  <p className="text-sm font-bold text-socal-ink">{profile.phone}</p>
                 </div>
               </div>
               <div className="flex gap-2">
                 <a 
                   href={`sms:${profile.phone}`} 
-                  className="p-2.5 bg-slate-100 hover:bg-blue-500 hover:text-white text-slate-600 rounded-full transition-colors shadow-sm"
+                  className="p-2.5 bg-socal-sand hover:bg-socal-orange hover:text-white text-socal-ink rounded-full transition-colors shadow-sm"
                   title="Send Text"
                 >
                   <MessageSquare size={16} />
                 </a>
                 <a 
                   href={`tel:${profile.phone}`} 
-                  className="p-2.5 bg-slate-100 hover:bg-emerald-500 hover:text-white text-slate-600 rounded-full transition-colors shadow-sm"
+                  className="p-2.5 bg-socal-sand hover:bg-emerald-500 hover:text-white text-socal-ink rounded-full transition-colors shadow-sm"
                   title="Call"
                 >
                   <Phone size={16} />
@@ -253,27 +253,27 @@ export default function DirectoryProfile() {
             </div>
           )}
 
-          <a href={`mailto:${profile.email}`} className="flex items-center gap-3 p-2 hover:bg-slate-50 rounded-lg transition-colors group">
-            <div className="bg-slate-100 p-2 rounded-lg group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors"><Mail size={18}/></div>
+          <a href={`mailto:${profile.email}`} className="flex items-center gap-3 p-2 hover:bg-socal-sand/60 rounded-lg transition-colors group">
+            <div className="bg-socal-sand p-2 rounded-lg group-hover:bg-socal-orange-light group-hover:text-socal-orange-dark transition-colors"><Mail size={18}/></div>
             <div>
               <p className="text-xs font-bold text-slate-400 uppercase">Email</p>
-              <p className="text-sm font-bold text-slate-800">{profile.email}</p>
+              <p className="text-sm font-bold text-socal-ink">{profile.email}</p>
             </div>
           </a>
 
           {profile.social_links?.website && (
-            <a href={profile.social_links.website} target="_blank" rel="noreferrer" className="flex items-center gap-3 p-2 hover:bg-slate-50 rounded-lg transition-colors group">
-              <div className="bg-slate-100 p-2 rounded-lg group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors"><Globe size={18}/></div>
-              <div>
+            <a href={profile.social_links.website} target="_blank" rel="noreferrer" className="flex items-center gap-3 p-2 hover:bg-socal-sand/60 rounded-lg transition-colors group">
+              <div className="bg-socal-sand p-2 rounded-lg group-hover:bg-socal-orange-light group-hover:text-socal-orange-dark transition-colors"><Globe size={18}/></div>
+              <div className="min-w-0">
                 <p className="text-xs font-bold text-slate-400 uppercase">Website</p>
-                <p className="text-sm font-bold text-blue-600 truncate">{profile.social_links.website.replace('https://', '')}</p>
+                <p className="text-sm font-bold text-socal-orange-dark truncate">{profile.social_links.website.replace('https://', '')}</p>
               </div>
             </a>
           )}
 
           {profile.social_links?.instagram && (
-            <a href={`https://instagram.com/${profile.social_links.instagram.replace('@', '')}`} target="_blank" rel="noreferrer" className="flex items-center gap-3 p-2 hover:bg-slate-50 rounded-lg transition-colors group">
-              <div className="bg-slate-100 p-2 rounded-lg group-hover:bg-rose-100 group-hover:text-rose-600 transition-colors"><AtSign size={18}/></div>
+            <a href={`https://instagram.com/${profile.social_links.instagram.replace('@', '')}`} target="_blank" rel="noreferrer" className="flex items-center gap-3 p-2 hover:bg-socal-sand/60 rounded-lg transition-colors group">
+              <div className="bg-socal-sand p-2 rounded-lg group-hover:bg-rose-100 group-hover:text-rose-600 transition-colors"><AtSign size={18}/></div>
               <div>
                 <p className="text-xs font-bold text-slate-400 uppercase">Instagram</p>
                 <p className="text-sm font-bold text-rose-600">{profile.social_links.instagram}</p>
@@ -282,21 +282,20 @@ export default function DirectoryProfile() {
           )}
 
           {profile.social_links?.twitter && (
-            <a href={`https://twitter.com/${profile.social_links.twitter.replace('@', '')}`} target="_blank" rel="noreferrer" className="flex items-center gap-3 p-2 hover:bg-slate-50 rounded-lg transition-colors group">
-              <div className="bg-slate-100 p-2 rounded-lg group-hover:bg-cyan-100 group-hover:text-cyan-600 transition-colors"><AtSign size={18}/></div>
+            <a href={`https://twitter.com/${profile.social_links.twitter.replace('@', '')}`} target="_blank" rel="noreferrer" className="flex items-center gap-3 p-2 hover:bg-socal-sand/60 rounded-lg transition-colors group">
+              <div className="bg-socal-sand p-2 rounded-lg group-hover:bg-socal-plum-light group-hover:text-socal-plum transition-colors"><AtSign size={18}/></div>
               <div>
                 <p className="text-xs font-bold text-slate-400 uppercase">Twitter / X</p>
-                <p className="text-sm font-bold text-cyan-600">{profile.social_links.twitter}</p>
+                <p className="text-sm font-bold text-socal-plum">{profile.social_links.twitter}</p>
               </div>
             </a>
           )}
 
-          {/* NEW: Link to Public Rescue Profile - Moved to the bottom of the contact card */}
           {profile.type === 'Rescue' && (
-            <div className="pt-3 mt-3 border-t border-slate-100">
+            <div className="pt-3 mt-3 border-t border-socal-sand-border/70">
               <Link 
                 to={`/rescue/${profile.user_id}`}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl shadow-sm transition-colors flex items-center justify-center gap-2"
+                className="w-full bg-socal-plum hover:bg-socal-plum-dark text-white font-bold py-3 px-4 rounded-xl shadow-sm transition-colors flex items-center justify-center gap-2"
               >
                 <ShieldCheck size={18} /> View Public Rescue Page
               </Link>

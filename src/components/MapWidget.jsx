@@ -4,28 +4,24 @@ import L from 'leaflet';
 import 'leaflet.heat';
 import 'leaflet/dist/leaflet.css';
 
-// 1. Create a helper component that hooks into the Leaflet map instance
 function HeatmapLayer({ points }) {
   const map = useMap();
 
   useEffect(() => {
     if (!points || points.length === 0) return;
 
-    // Create the heatmap layer with custom styling
     const heat = L.heatLayer(points, {
       radius: 25,
       blur: 15,
       maxZoom: 13,
-      gradient: { 
-        0.4: 'blue', 
-        0.6: 'cyan', 
-        0.7: 'lime', 
-        0.8: 'yellow', 
-        1.0: 'red' 
-      } // Hotter colors (red) for clusters
+      gradient: {
+        0.3: '#692F64',
+        0.55: '#E88B44',
+        0.8: '#F59E0B',
+        1.0: '#E11D48',
+      },
     }).addTo(map);
 
-    // Cleanup when component unmounts or data changes
     return () => {
       map.removeLayer(heat);
     };
@@ -34,22 +30,19 @@ function HeatmapLayer({ points }) {
   return null;
 }
 
-// 2. Export the main Map Widget
-export default function MapWidget({ sightings }) {
-  // Center map on Los Angeles by default
-  const defaultCenter = [34.0522, -118.2437];
+export default function MapWidget({ sightings = [] }) {
+  // Default center covering Greater Southern California (LA, OC, IE, SD corridor)
+  const defaultCenter = [33.8358, -117.9143];
 
-  // Filter out sightings that don't have GPS coordinates yet
-  // Format needed for heatmap: [latitude, longitude, intensity]
-  const heatPoints = sightings
-    .filter(s => s.latitude && s.longitude)
-    .map(s => [s.latitude, s.longitude, 1.0]);
+  const heatPoints = (sightings || [])
+    .filter((s) => s.latitude && s.longitude)
+    .map((s) => [s.latitude, s.longitude, 1.0]);
 
   return (
-    <div className="rounded-xl overflow-hidden shadow-sm border border-slate-100 relative z-0">
-      <MapContainer 
-        center={defaultCenter} 
-        zoom={11} 
+    <div className="rounded-xl overflow-hidden shadow-sm border border-socal-sand-border relative z-0">
+      <MapContainer
+        center={defaultCenter}
+        zoom={9}
         style={{ height: '350px', width: '100%', zIndex: 0 }}
       >
         <TileLayer
