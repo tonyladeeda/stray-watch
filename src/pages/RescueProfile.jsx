@@ -22,6 +22,13 @@ export default function RescueProfile() {
   const [viewMode, setViewMode] = useState('grid'); 
   const [isAddingAnimal, setIsAddingAnimal] = useState(false);
   const [isTeamMember, setIsTeamMember] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    const handleRefresh = () => setRefreshKey((prev) => prev + 1);
+    window.addEventListener('socalstrays:animal-added', handleRefresh);
+    return () => window.removeEventListener('socalstrays:animal-added', handleRefresh);
+  }, []);
 
   useEffect(() => {
     const initProfile = async () => {
@@ -71,7 +78,7 @@ export default function RescueProfile() {
             .eq('user_id', currentSession.user.id)
             .maybeSingle();
           
-          if (roleData) setIsTeamMember(true);
+          setIsTeamMember(Boolean(roleData));
         }
 
         const { data: dirData } = await supabase
@@ -87,11 +94,15 @@ export default function RescueProfile() {
           bio: dirData?.bio || '',
           social_links: dirData?.social_links || {}
         });
-        
+
+        const orFilter = rescueData.user_id
+          ? `rescue_partner_id.eq.${rescueData.id},handler_id.eq.${rescueData.user_id}`
+          : `rescue_partner_id.eq.${rescueData.id}`;
+
         const { data: animalData } = await supabase
           .from('animals')
           .select('*, sightings(image_url, image_urls)')
-          .eq('handler_id', rescueData.user_id)
+          .or(orFilter)
           .order('created_at', { ascending: false });
           
         if (animalData) setAnimals(animalData);
@@ -100,7 +111,7 @@ export default function RescueProfile() {
     };
 
     initProfile();
-  }, [id, navigate, isAddingAnimal]);
+  }, [id, navigate, refreshKey]);
 
   if (loading) return <div className="p-8 text-center font-bold text-slate-500 mt-10">Loading Rescue Profile...</div>;
   if (!rescue) return <div className="p-8 text-center font-bold text-socal-ink mt-10">Rescue not found.</div>;
@@ -347,7 +358,13 @@ export default function RescueProfile() {
 
       </div>
 
-      <ReportModal isOpen={isAddingAnimal} onClose={() => setIsAddingAnimal(false)} reportType="Rescue Intake" />
+      <ReportModal
+        isOpen={isAddingAnimal}
+        onClose={() => setIsAddingAnimal(false)}
+        reportType="Rescue Intake"
+        rescueId={rescue.id}
+        onSuccess={() => setRefreshKey((prev) => prev + 1)}
+      />
     </div>
   );
 }

@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import {
   Building, LayoutDashboard, PawPrint, Inbox, ChevronRight, DollarSign,
-  ShieldCheck, Heart, ClipboardList, Activity, MapPin, Settings, Home
+  ShieldCheck, Heart, ClipboardList, Activity, MapPin, Settings, Home, Plus
 } from 'lucide-react';
+import ReportModal from '../components/ReportModal';
 
 export default function RescueDashboard() {
   const navigate = useNavigate();
@@ -14,6 +15,7 @@ export default function RescueDashboard() {
 
   // Dashboard Metrics & State
   const [activeTab, setActiveTab] = useState('overview');
+  const [isAddingAnimal, setIsAddingAnimal] = useState(false);
   const [roster, setRoster] = useState([]);
   const [stats, setStats] = useState({ totalAnimals: 0, newReports: 0, urgent: 0, pendingPlacement: 0 });
   const [finances, setFinances] = useState({ raised: 0, goal: 0 });
@@ -23,15 +25,7 @@ export default function RescueDashboard() {
     { id: 3, sender: 'Local Shelter', text: 'Transfer documentation approved.', time: '1d ago', unread: false },
   ]);
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      if (session) verifyAndFetchData(session.user.id);
-      else setLoading(false);
-    });
-  }, []);
-
-  const verifyAndFetchData = async (userId) => {
+  const verifyAndFetchData = useCallback(async (userId) => {
     setLoading(true);
 
     const { data: teamData } = await supabase
@@ -40,7 +34,10 @@ export default function RescueDashboard() {
       .eq('user_id', userId)
       .maybeSingle();
 
-    if (!teamData) return setLoading(false);
+    if (!teamData) {
+      setLoading(false);
+      return;
+    }
 
     const { data: rescueData } = await supabase
       .from('rescue_partners')
@@ -48,13 +45,23 @@ export default function RescueDashboard() {
       .eq('id', teamData.rescue_id)
       .single();
 
-    if (!rescueData) return setLoading(false);
+    if (!rescueData) {
+      setLoading(false);
+      return;
+    }
     setRescueProfile(rescueData);
+
+    const handlerIds = [userId, rescueData.user_id].filter(Boolean);
+    const uniqueHandlers = [...new Set(handlerIds)];
+    const orClauses = [
+      `rescue_partner_id.eq.${rescueData.id}`,
+      ...uniqueHandlers.map((uid) => `handler_id.eq.${uid}`)
+    ].join(',');
 
     const { data: animalData } = await supabase
       .from('animals')
       .select('*, sightings(image_url, image_urls, location)')
-      .eq('handler_id', userId)
+      .or(orClauses)
       .order('created_at', { ascending: false });
 
     if (animalData) {
@@ -79,7 +86,22 @@ export default function RescueDashboard() {
     }
 
     setLoading(false);
-  };
+  }, []);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session) verifyAndFetchData(session.user.id);
+      else setLoading(false);
+    });
+  }, [verifyAndFetchData]);
+
+  useEffect(() => {
+    if (!session) return;
+    const handleRefresh = () => verifyAndFetchData(session.user.id);
+    window.addEventListener('socalstrays:animal-added', handleRefresh);
+    return () => window.removeEventListener('socalstrays:animal-added', handleRefresh);
+  }, [session, verifyAndFetchData]);
 
   if (loading) return <div className="p-8 text-center font-bold text-slate-500">Loading Rescue Dashboard...</div>;
 
@@ -107,37 +129,48 @@ export default function RescueDashboard() {
     <div className="bg-socal-sand min-h-screen pb-24 font-sans text-socal-ink">
       {/* Rescue Header */}
       <div className="bg-gradient-to-br from-socal-plum to-socal-plum-dark text-white p-5 pb-12 rounded-b-3xl shadow-md">
-        <div className="flex justify-between items-start mb-2">
-          <div className="flex items-center gap-3">
+        <div className="flex justify-between items-start gap-2 mb-2">
+          <div className="flex items-center gap-3 min-w-0">
             {rescueProfile.avatar_url ? (
               <img
                 src={rescueProfile.avatar_url}
-                className="w-12 h-12 rounded-full border-2 border-socal-orange/80 object-cover bg-white"
+                className="w-12 h-12 rounded-full border-2 border-socal-orange/80 object-cover bg-white shrink-0"
                 alt="Rescue"
               />
             ) : (
-              <div className="w-12 h-12 rounded-full bg-white/15 border-2 border-socal-orange/70 flex items-center justify-center">
+              <div className="w-12 h-12 rounded-full bg-white/15 border-2 border-socal-orange/70 flex items-center justify-center shrink-0">
                 <Building size={24} className="text-socal-orange-light" />
               </div>
             )}
-            <div>
-              <h1 className="font-black text-xl tracking-tight leading-tight">{rescueProfile.name}</h1>
+            <div className="min-w-0">
+              <h1 className="font-black text-xl tracking-tight leading-tight truncate">{rescueProfile.name}</h1>
               <div className="flex items-center gap-1.5 text-white/80 text-xs font-bold mt-1">
                 <ShieldCheck
                   size={14}
-                  className={rescueProfile.is_verified ? 'text-emerald-400' : 'text-socal-orange'}
+                  className={rescueProfile.is_verified ? 'text-emerald-400 shrink-0' : 'text-socal-orange shrink-0'}
                 />
-                {rescueProfile.is_verified ? 'Verified 501(c)(3)' : 'Pending Verification'}
+                <span className="truncate">
+                  {rescueProfile.is_verified ? 'Verified 501(c)(3)' : 'Pending Verification'}
+                </span>
               </div>
             </div>
           </div>
-          <button
-            onClick={() => navigate('/settings')}
-            className="p-2 bg-white/15 hover:bg-white/25 rounded-full transition-colors"
-            aria-label="Rescue Settings"
-          >
-            <Settings size={20} className="text-white" />
-          </button>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => setIsAddingAnimal(true)}
+              className="bg-socal-orange hover:bg-socal-orange-dark text-white text-xs font-black px-3 py-2 rounded-full shadow-sm transition-colors flex items-center gap-1"
+            >
+              <Plus size={15} strokeWidth={2.75} /> Add
+            </button>
+            <button
+              onClick={() => navigate('/settings')}
+              className="p-2 bg-white/15 hover:bg-white/25 rounded-full transition-colors"
+              aria-label="Rescue Settings"
+            >
+              <Settings size={20} className="text-white" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -259,32 +292,48 @@ export default function RescueDashboard() {
         {/* ROSTER TAB */}
         {activeTab === 'roster' && (
           <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
-            <div className="flex justify-between items-center px-1">
+            <div className="flex flex-wrap justify-between items-center gap-2 px-1">
               <div>
                 <h2 className="font-bold text-socal-ink">Managed Animals</h2>
                 <p className="text-xs text-slate-500">Your current operational roster.</p>
               </div>
-              <Link
-                to="/"
-                className="text-xs font-bold text-socal-plum hover:bg-socal-plum/15 bg-socal-plum-light px-3 py-1.5 rounded-lg border border-socal-plum/20 transition-colors"
-              >
-                Browse Feed
-              </Link>
+              <div className="flex items-center gap-2">
+                <Link
+                  to="/"
+                  className="text-xs font-bold text-socal-plum hover:bg-socal-plum/15 bg-socal-plum-light px-3 py-1.5 rounded-lg border border-socal-plum/20 transition-colors"
+                >
+                  Browse Feed
+                </Link>
+                <button
+                  onClick={() => setIsAddingAnimal(true)}
+                  className="text-xs font-bold text-white bg-socal-plum hover:bg-socal-plum-dark px-3 py-1.5 rounded-lg shadow-sm transition-colors flex items-center gap-1"
+                >
+                  <Plus size={14} /> Add Animal
+                </button>
+              </div>
             </div>
 
             {roster.length === 0 ? (
               <div className="bg-white rounded-2xl p-8 border border-socal-sand-border text-center shadow-sm">
                 <Activity size={32} className="mx-auto text-socal-orange/50 mb-3" />
                 <h3 className="font-bold text-socal-ink mb-1">Your roster is empty</h3>
-                <p className="text-sm text-slate-500 mb-4">
-                  Claim an animal from the SoCal feed to manage their rescue journey.
+                <p className="text-sm text-slate-500 mb-5">
+                  Add an animal currently in your care, or claim one from the SoCal feed.
                 </p>
-                <Link
-                  to="/"
-                  className="inline-block bg-socal-plum hover:bg-socal-plum-dark text-white font-bold py-2.5 px-6 rounded-xl transition-colors"
-                >
-                  View Feed
-                </Link>
+                <div className="flex flex-wrap justify-center gap-2">
+                  <button
+                    onClick={() => setIsAddingAnimal(true)}
+                    className="bg-socal-plum hover:bg-socal-plum-dark text-white font-bold py-2.5 px-5 rounded-xl transition-colors flex items-center gap-1.5 shadow-sm"
+                  >
+                    <Plus size={16} /> Add Animal
+                  </button>
+                  <Link
+                    to="/"
+                    className="bg-socal-sand hover:bg-socal-sand-border text-socal-ink font-bold py-2.5 px-5 rounded-xl border border-socal-sand-border transition-colors"
+                  >
+                    Browse Feed
+                  </Link>
+                </div>
               </div>
             ) : (
               <div className="grid gap-3">
@@ -333,7 +382,7 @@ export default function RescueDashboard() {
                           <MapPin size={12} className="text-socal-orange shrink-0" /> {loc}
                         </p>
 
-                        <div className="flex gap-1.5">
+                        <div className="flex flex-wrap gap-1.5">
                           {animal.available_for_foster && (
                             <span className="text-[9px] font-bold bg-socal-orange-light text-socal-orange-dark px-1.5 py-0.5 rounded border border-socal-orange/25 flex items-center gap-1">
                               <Heart size={10} /> Foster Needed
@@ -394,6 +443,14 @@ export default function RescueDashboard() {
           </div>
         )}
       </main>
+
+      <ReportModal
+        isOpen={isAddingAnimal}
+        onClose={() => setIsAddingAnimal(false)}
+        reportType="Rescue Intake"
+        rescueId={rescueProfile.id}
+        onSuccess={() => verifyAndFetchData(session.user.id)}
+      />
     </div>
   );
 }

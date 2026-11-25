@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Routes, Route, useNavigate } from 'react-router-dom';
-import { Camera, Plus, Clock, X } from 'lucide-react';
+import { Camera, Plus, Clock, X, Heart } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import Auth from './Auth';
 import Header from './components/Header';
@@ -137,6 +137,17 @@ export default function App() {
           <div className="fixed bottom-24 right-4 sm:right-[calc(50%-224px+16px)] z-30 flex flex-col items-end gap-3">
             {isMenuOpen && (
               <div className="flex flex-col items-end gap-3 mb-2 animate-in fade-in slide-in-from-bottom-4">
+                {userRescueId && (
+                  <button
+                    onClick={() => openReportModal('Rescue Intake')}
+                    className="flex items-center gap-3 bg-white hover:bg-socal-plum-light text-socal-ink font-bold py-3 pl-5 pr-3.5 rounded-full shadow-xl border border-socal-plum/25 transition-all"
+                  >
+                    Add Rescue Animal
+                    <div className="bg-socal-plum text-white p-2 rounded-full shadow-sm">
+                      <Heart size={16} />
+                    </div>
+                  </button>
+                )}
                 <button
                   onClick={() => openReportModal('Shelter Urgent')}
                   className="flex items-center gap-3 bg-white hover:bg-socal-urgent-light text-socal-ink font-bold py-3 pl-5 pr-3.5 rounded-full shadow-xl border border-red-200 transition-all"
@@ -177,6 +188,8 @@ export default function App() {
         isOpen={isReporting}
         onClose={() => setIsReporting(false)}
         reportType={reportType}
+        rescueId={userRescueId}
+        onSuccess={() => window.dispatchEvent(new Event('socalstrays:animal-added'))}
       />
       <AuthModal
         isOpen={isAuthModalOpen}
